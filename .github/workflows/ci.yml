@@ -48,7 +48,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - run: cat .github/tool-versions.env >> "$GITHUB_ENV"
+      - run: grep -E '^[A-Z_]+=' .github/tool-versions.env >> "$GITHUB_ENV"
       - run: npm ci
       - run: node build/package.mjs
       - name: Cloudflare — wrangler bundles the Worker, the module and the Durable Object binding
