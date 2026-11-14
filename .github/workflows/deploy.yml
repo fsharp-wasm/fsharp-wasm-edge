@@ -81,7 +81,7 @@ jobs:
           ref: ${{ needs.plan.outputs.sha }}
           sparse-checkout: .github/tool-versions.env
           sparse-checkout-cone-mode: false
-      - run: cat .github/tool-versions.env >> "$GITHUB_ENV"
+      - run: grep -E '^[A-Z_]+=' .github/tool-versions.env >> "$GITHUB_ENV"
       - name: The package CI built
         run: gh run download "${{ needs.plan.outputs.run_id }}" --name platforms --dir platforms
       - name: Deploy (Worker + Durable Object)
@@ -117,7 +117,7 @@ jobs:
           ref: ${{ needs.plan.outputs.sha }}
           sparse-checkout: .github/tool-versions.env
           sparse-checkout-cone-mode: false
-      - run: cat .github/tool-versions.env >> "$GITHUB_ENV"
+      - run: grep -E '^[A-Z_]+=' .github/tool-versions.env >> "$GITHUB_ENV"
       - name: The package CI built
         run: gh run download "${{ needs.plan.outputs.run_id }}" --name platforms --dir platforms
       - name: Deploy (Edge Function + Node.js function)
@@ -153,7 +153,7 @@ jobs:
           ref: ${{ needs.plan.outputs.sha }}
           sparse-checkout: .github/tool-versions.env
           sparse-checkout-cone-mode: false
-      - run: cat .github/tool-versions.env >> "$GITHUB_ENV"
+      - run: grep -E '^[A-Z_]+=' .github/tool-versions.env >> "$GITHUB_ENV"
       - name: The package CI built
         run: gh run download "${{ needs.plan.outputs.run_id }}" --name platforms --dir platforms
       - name: Deploy (Edge Function + Node.js function)

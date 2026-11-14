@@ -63,7 +63,7 @@ with WebAssembly GC. `tools/fixture.mjs` refuses a module that imports the built
 | `tests/platforms` | the matrix (`run.mjs`) and the live runner (`live.mjs`: the same checks against deployments) |
 | `tools/fixture.mjs` | `set` records a new module with its provenance, `check` verifies the checked-in one |
 | `.github/workflows` | `ci.yml` (lint, matrix, package checks), `deploy.yml` (the CI artifact to Cloudflare, Vercel and Netlify, then the live check) |
-| `docs/` | [deploy.md](docs/deploy.md), [platforms.md](docs/platforms.md), [roadmap.md](docs/roadmap.md) |
+| `docs/` | [deploy.md](docs/deploy.md), [platforms.md](docs/platforms.md), [roadmap.md](docs/roadmap.md), [spikes/wit-glue](docs/spikes/wit-glue/README.md) (a WasmGC module as a WIT component) |
 
 ## Build and run
 

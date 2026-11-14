@@ -1,0 +1,51 @@
+(component
+  (core module $gc
+    (type $str (array (mut i8)))
+    (data $hello "Hello, ")
+    (func (export "greet") (param $name (ref null $str)) (result (ref null $str))
+      (local $out (ref null $str)) (local $n i32)
+      (local.set $n (array.len (local.get $name)))
+      (local.set $out (array.new_default $str (i32.add (local.get $n) (i32.const 7))))
+      (array.init_data $str $hello (local.get $out) (i32.const 0) (i32.const 0) (i32.const 7))
+      (array.copy $str $str (local.get $out) (i32.const 7) (local.get $name) (i32.const 0) (local.get $n))
+      (local.get $out)))
+  (core module $glue
+    (type $str (array (mut i8)))
+    (import "gc" "greet" (func $greet (param (ref null $str)) (result (ref null $str))))
+    (memory (export "memory") 1)
+    (global $heap (mut i32) (i32.const 1024))
+    (func $realloc (export "cabi_realloc") (param $old i32) (param $oldsz i32) (param $align i32) (param $size i32) (result i32)
+      (local $p i32)
+      (local.set $p (global.get $heap))
+      (global.set $heap (i32.add (global.get $heap) (local.get $size)))
+      (local.get $p))
+    (func (export "greet") (param $ptr i32) (param $len i32) (result i32)
+      (local $in (ref null $str)) (local $out (ref null $str)) (local $i i32) (local $n i32) (local $dst i32) (local $ret i32)
+      ;; lift: linear memory -> GC array
+      (local.set $in (array.new_default $str (local.get $len)))
+      (loop $l1
+        (if (i32.lt_u (local.get $i) (local.get $len)) (then
+          (array.set $str (local.get $in) (local.get $i) (i32.load8_u (i32.add (local.get $ptr) (local.get $i))))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br $l1))))
+      (local.set $out (call $greet (local.get $in)))
+      ;; lower: GC array -> linear memory
+      (local.set $n (array.len (local.get $out)))
+      (local.set $dst (call $realloc (i32.const 0) (i32.const 0) (i32.const 1) (local.get $n)))
+      (local.set $i (i32.const 0))
+      (loop $l2
+        (if (i32.lt_u (local.get $i) (local.get $n)) (then
+          (i32.store8 (i32.add (local.get $dst) (local.get $i)) (array.get_u $str (local.get $out) (local.get $i)))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br $l2))))
+      (local.set $ret (call $realloc (i32.const 0) (i32.const 0) (i32.const 4) (i32.const 8)))
+      (i32.store (local.get $ret) (local.get $dst))
+      (i32.store offset=4 (local.get $ret) (local.get $n))
+      (local.get $ret)))
+  (core instance $gci (instantiate $gc))
+  (core instance $gluei (instantiate $glue (with "gc" (instance $gci))))
+  (alias core export $gluei "memory" (core memory $mem))
+  (alias core export $gluei "cabi_realloc" (core func $realloc))
+  (alias core export $gluei "greet" (core func $cgreet))
+  (func $greet (param "name" string) (result string) (canon lift (core func $cgreet) (memory $mem) (realloc $realloc)))
+  (export "greet" (func $greet)))
