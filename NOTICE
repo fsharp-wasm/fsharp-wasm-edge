@@ -1,0 +1,7 @@
+fsharp-wasm-edge
+Copyright 2026 The fsharp-wasm contributors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Provenance: the host core, the platform adapters, the platform matrix and the deployment workflow are moving here from the
+repository fsharp-wasm-backend (server/, tests/platforms, .github/workflows/deploy.yml), where they were written.
