@@ -1,0 +1,205 @@
+name: Deploy
+
+# Deploys what CI built and tested — the `platforms` artifact of a CI run, not a rebuild — to Cloudflare, Vercel and Netlify, then runs
+# the platform scenario (tests/platforms) against the live URLs and compares the answers.  docs/deploy.md lists what each platform needs.
+#
+#   automatic  after a successful CI run on main, when the repository variable CD_ENABLED is "true"
+#   manual     Actions → Deploy → Run workflow (the platforms, optionally the CI run to deploy)
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms: all, or a comma-separated list of cloudflare, vercel, netlify"
+        default: all
+      run-id:
+        description: "CI run whose `platforms` artifact is deployed (default: the latest successful CI run on main)"
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+
+# one deployment at a time: the live check expects a deployment of its own
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+  # the platforms' command-line tools: .github/tool-versions.env, the same file CI checks the packages with
+
+jobs:
+  # which platforms, and which CI run
+  plan:
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && vars.CD_ENABLED == 'true')
+    outputs:
+      run_id: ${{ steps.plan.outputs.run_id }}
+      sha: ${{ steps.plan.outputs.sha }}
+      cloudflare: ${{ steps.plan.outputs.cloudflare }}
+      vercel: ${{ steps.plan.outputs.vercel }}
+      netlify: ${{ steps.plan.outputs.netlify }}
+    steps:
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.run-id }}
+          WANTED: ${{ inputs.platforms || vars.CD_PLATFORMS || 'all' }}
+        run: |
+          run_id="$WORKFLOW_RUN_ID"
+          [ -n "$run_id" ] || run_id="$INPUT_RUN_ID"
+          [ -n "$run_id" ] || run_id=$(gh run list --workflow ci.yml --branch main --event push --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          [ -n "$run_id" ] || { echo "::error::no successful CI run on main to deploy"; exit 1; }
+          read -r sha branch < <(gh run view "$run_id" --json headSha,headBranch --jq '[.headSha, .headBranch] | join(" ")')
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          for p in cloudflare vercel netlify; do
+            case ",$(echo "$WANTED" | tr -d ' ')," in *,all,*|*,"$p",*) v=true ;; *) v=false ;; esac
+            echo "$p=$v" >> "$GITHUB_OUTPUT"
+          done
+          echo "Deploying the \`platforms\` artifact of CI run $run_id (branch \`$branch\`, commit \`$sha\`) to: $WANTED" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  cloudflare:
+    needs: plan
+    if: needs.plan.outputs.cloudflare == 'true'
+    runs-on: ubuntu-24.04
+    environment: cloudflare
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          sparse-checkout: .github/tool-versions.env
+          sparse-checkout-cone-mode: false
+      - run: cat .github/tool-versions.env >> "$GITHUB_ENV"
+      - name: The package CI built
+        run: gh run download "${{ needs.plan.outputs.run_id }}" --name platforms --dir platforms
+      - name: Deploy (Worker + Durable Object)
+        id: deploy
+        working-directory: platforms/cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CUSTOM_URL: ${{ vars.CLOUDFLARE_URL }}
+        run: |
+          for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!v}" ] || { echo "::error::the secret $v is not set (environment 'cloudflare' or the repository): see docs/deploy.md"; exit 1; }
+          done
+          npx --yes "$WRANGLER" deploy 2>&1 | tee deploy.log
+          # a custom domain is the repository variable CLOUDFLARE_URL; otherwise the workers.dev address wrangler prints
+          url="${CUSTOM_URL:-$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' deploy.log | head -1)}"
+          [ -n "$url" ] || { echo "::error::wrangler printed no workers.dev address: register the account's workers.dev subdomain (docs/deploy.md) or set CLOUDFLARE_URL"; exit 1; }
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+  vercel:
+    needs: plan
+    if: needs.plan.outputs.vercel == 'true'
+    runs-on: ubuntu-24.04
+    environment: vercel
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          sparse-checkout: .github/tool-versions.env
+          sparse-checkout-cone-mode: false
+      - run: cat .github/tool-versions.env >> "$GITHUB_ENV"
+      - name: The package CI built
+        run: gh run download "${{ needs.plan.outputs.run_id }}" --name platforms --dir platforms
+      - name: Deploy (Edge Function + Node.js function)
+        id: deploy
+        working-directory: platforms/vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          for v in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            [ -n "${!v}" ] || { echo "::error::the secret $v is not set (environment 'vercel' or the repository): see docs/deploy.md"; exit 1; }
+          done
+          # stdout of `vercel deploy` is the deployment's URL, everything else goes to stderr
+          url=$(npx --yes "$VERCEL_CLI" deploy --prod --yes --token "$VERCEL_TOKEN" 2> deploy.log | tail -1)
+          cat deploy.log
+          case "$url" in https://*) ;; *) echo "::error::vercel deploy printed no URL"; exit 1 ;; esac
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+  netlify:
+    needs: plan
+    if: needs.plan.outputs.netlify == 'true'
+    runs-on: ubuntu-24.04
+    environment: netlify
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          sparse-checkout: .github/tool-versions.env
+          sparse-checkout-cone-mode: false
+      - run: cat .github/tool-versions.env >> "$GITHUB_ENV"
+      - name: The package CI built
+        run: gh run download "${{ needs.plan.outputs.run_id }}" --name platforms --dir platforms
+      - name: Deploy (Edge Function + Node.js function)
+        id: deploy
+        working-directory: platforms/netlify
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          for v in NETLIFY_AUTH_TOKEN NETLIFY_SITE_ID; do
+            [ -n "${!v}" ] || { echo "::error::the secret $v is not set (environment 'netlify' or the repository): see docs/deploy.md"; exit 1; }
+          done
+          npx --yes "$NETLIFY_CLI" deploy --prod --json > deploy.json 2> deploy.log || { cat deploy.log; exit 1; }
+          cat deploy.log
+          url=$(node -e 'const d = JSON.parse(require("fs").readFileSync("deploy.json", "utf8")); console.log(d.url || d.deploy_url || "")')
+          case "$url" in https://*) ;; *) echo "::error::netlify deploy printed no URL"; cat deploy.json; exit 1 ;; esac
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+  # the scenario of the matrix against every deployment that was made, the answers compared with each other
+  live:
+    needs: [plan, cloudflare, vercel, netlify]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.cloudflare.outputs.url || needs.vercel.outputs.url || needs.netlify.outputs.url) }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.plan.outputs.sha }}            # the scenario of the commit that was deployed
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: The scenario against the deployments
+        env:
+          CLOUDFLARE_URL: ${{ needs.cloudflare.outputs.url }}
+          VERCEL_URL: ${{ needs.vercel.outputs.url }}
+          NETLIFY_URL: ${{ needs.netlify.outputs.url }}
+          # a Vercel project with Deployment Protection answers 401 to everything without this (optional; docs/deploy.md)
+          LIVE_HEADER_VERCEL: "x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}"
+          LIVE_HEADER_VERCEL_NODE: "x-vercel-protection-bypass: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}"
+        run: |
+          args=()
+          [ -z "$CLOUDFLARE_URL" ] || args+=("cloudflare=$CLOUDFLARE_URL")
+          [ -z "$VERCEL_URL" ] || args+=("vercel=$VERCEL_URL" "vercel-node=${VERCEL_URL%/}/api/node/")
+          [ -z "$NETLIFY_URL" ] || args+=("netlify=$NETLIFY_URL" "netlify-functions=${NETLIFY_URL%/}/fn/")
+          node tests/platforms/live.mjs "${args[@]}" --out live.json
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: live
+          path: live.json

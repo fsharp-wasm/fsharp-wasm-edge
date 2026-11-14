@@ -1,0 +1,18 @@
+{
+  "name": "fsharp-wasm-edge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The host that runs F# programs compiled to WebAssembly GC on Cloudflare, Vercel, Netlify, Deno, Bun and Node",
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "assets": "node build/assets.mjs",
+    "package": "node build/package.mjs",
+    "test:platforms": "node tests/platforms/run.mjs"
+  },
+  "devDependencies": {
+    "@edge-runtime/vm": "5.0.0",
+    "esbuild": "^0.25.0",
+    "miniflare": "^4.20260730.0"
+  }
+}

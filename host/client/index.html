@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ghost Todo — F# on the server, as WebAssembly GC</title>
+<style>
+  :root { color-scheme: light dark; --accent: #3b82f6; }
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+  h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
+  .sub { opacity: .7; margin: 0 0 1.25rem; }
+  form { display: flex; gap: .5rem; margin-bottom: 1rem; }
+  input { flex: 1; font: inherit; padding: .45rem .6rem; border: 1px solid #8884; border-radius: 8px; background: transparent; color: inherit; }
+  button { font: inherit; padding: .45rem .9rem; border: 0; border-radius: 8px; background: var(--accent); color: white; cursor: pointer; }
+  button.quiet { background: transparent; color: inherit; opacity: .6; padding: .2rem .5rem; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { display: flex; align-items: center; gap: .6rem; padding: .45rem 0; border-bottom: 1px solid #8883; }
+  li.done span { text-decoration: line-through; opacity: .55; }
+  li span { flex: 1; cursor: pointer; }
+  .stats { margin-top: 1.25rem; font-size: .85rem; opacity: .7; display: grid; grid-template-columns: auto 1fr; gap: .15rem .8rem; }
+  code { font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<h1>Ghost Todo</h1>
+<p class="sub">An F# module compiled to WebAssembly GC runs this API. Every change is a <abbr title="Ghost-Graph Binary Patch">GGBP</abbr> patch; this page keeps a shadow of the list and applies the patches. Open it in two tabs.</p>
+<form id="add"><input id="text" placeholder="What needs doing?" autocomplete="off" maxlength="200" required><button>Add</button></form>
+<ul id="list"></ul>
+<div class="stats">
+  <span>runs on</span><code id="host">…</code>
+  <span>shadow version</span><code id="version">0</code>
+  <span>patches applied</span><code id="applied">0</code>
+  <span>last patch</span><code id="last">—</code>
+</div>
+<script type="module">
+/*GGBP*/
+const room = new URLSearchParams(location.search).get("room");
+// relative URLs: the page works below any base path (the Netlify function is mounted under /fn)
+const api = (path, init) => fetch(path + (room && !path.includes("?") ? `?room=${encodeURIComponent(room)}` : room ? `&room=${encodeURIComponent(room)}` : ""), init).then((r) => r.json());
+let shadow = emptyShadow(), applied = 0;
+const $ = (id) => document.getElementById(id);
+
+function draw() {
+  const list = $("list");
+  list.replaceChildren(...shadow.todos.map((t) => {
+    const li = document.createElement("li");
+    li.className = t.done ? "done" : "";
+    const label = Object.assign(document.createElement("span"), { textContent: t.text, onclick: () => mutate(`api/todos/${t.id}/toggle`, { method: "POST" }) });
+    const del = Object.assign(document.createElement("button"), { className: "quiet", textContent: "✕", title: "delete", onclick: () => mutate(`api/todos/${t.id}`, { method: "DELETE" }) });
+    li.append(label, del);
+    return li;
+  }));
+  $("version").textContent = shadow.version;
+  $("applied").textContent = applied;
+}
+
+function receive(hex) {
+  const bytes = fromHex(hex);
+  const patch = decode(bytes);
+  applyPatch(shadow, patch);
+  applied++;
+  $("last").textContent = `v${patch.version}: ${patch.ops.map((o) => o.op).join(", ")} (${bytes.length} bytes)`;
+}
+
+async function resync() {
+  shadow = shadowOf(await api("api/state"));
+  draw();
+}
+
+async function mutate(path, init) {
+  const result = await api(path, init);
+  if (result.patch) { try { receive(result.patch); } catch { await resync(); } draw(); }
+}
+
+async function poll() {
+  try {
+    const r = await api(`api/patches?since=${shadow.version}`);
+    if (r.resync) await resync();
+    else if (r.patches.length) { for (const p of r.patches) receive(p.hex); draw(); }
+  } catch { /* the next tick tries again */ }
+}
+
+$("add").onsubmit = async (e) => {
+  e.preventDefault();
+  const text = $("text").value.trim();
+  if (!text) return;
+  $("text").value = "";
+  await mutate("api/todos", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
+};
+
+$("host").textContent = (await api("api/info")).host;
+await resync();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>

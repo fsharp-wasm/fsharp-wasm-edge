@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # the workflows themselves
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: actionlint
+        run: |
+          pip install --quiet actionlint-py==1.7.12.25
+          actionlint
+
+  # the same scenario on every platform that can run here, on the checked-in module
+  platforms:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: oven-sh/setup-bun@v2
+      - run: npm ci
+      - name: The module is the one its provenance names
+        run: node tools/fixture.mjs check
+      - name: Package the platforms
+        run: node build/package.mjs
+      - name: The same scenario on every platform
+        run: node tests/platforms/run.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: platforms
+          path: dist/platforms
+
+  # what the platforms' own tools say about the packages, without an account
+  package-checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: cat .github/tool-versions.env >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: node build/package.mjs
+      - name: Cloudflare — wrangler bundles the Worker, the module and the Durable Object binding
+        working-directory: dist/platforms/cloudflare
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: |
+          npx --yes "$WRANGLER" deploy --dry-run --outdir "$RUNNER_TEMP/wrangler" | tee "$RUNNER_TEMP/wrangler.log"
+          grep -q 'GHOST_TODO (GhostTodo)' "$RUNNER_TEMP/wrangler.log"
+          ls "$RUNNER_TEMP"/wrangler/*GhostTodo.wasm
+      - name: Netlify — the function carries the module, the edge function answers every path but /fn
+        working-directory: dist/platforms/netlify
+        env:
+          NETLIFY_SITE_ID: 00000000-0000-0000-0000-000000000000
+          NETLIFY_AUTH_TOKEN: offline
+          NETLIFY_DISABLE_TELEMETRY: '1'
+        run: |
+          npx --yes "$NETLIFY_CLI" build --offline
+          unzip -l .netlify/functions/ghost.zip | grep -q ' GhostTodo.wasm$'
+          node -e '
+            const m = JSON.parse(require("fs").readFileSync(".netlify/edge-functions-dist/manifest.json", "utf8"));
+            const r = m.routes.find((r) => r.function === "ghost");
+            if (!r || r.path !== "/*" || !r.excluded_patterns.some((p) => p.includes("fn"))) { console.error("edge route is not /* without /fn:", JSON.stringify(r)); process.exit(1); }
+          '
