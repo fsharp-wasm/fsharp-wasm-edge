@@ -22,3 +22,30 @@ wasm-tools component wit glue.component.wasm
 npx @bytecodealliance/jco@1.42.0 transpile glue.component.wasm -o out && echo '{"type":"module"}' > out/package.json
 node -e 'import("./out/glue.component.js").then((m) => console.log(m.greet("Welt")))'
 ```
+
+## Spike 2: no second module — the adapters inside the GC module, strings as UTF-16
+
+The first spike put the linear memory in a second core module. It does not have to be: a WebAssembly GC module can have a linear memory too, and the
+adapters of the canonical ABI (`cabi_realloc`, the lift of the arguments, the lower of the result, `cabi_post_<name>`) are ordinary functions of it.
+`single-module.wat` is one module with GC types and its own memory; the string crosses with **`--encoding utf16`**, so the adapter copies UTF-16 code
+units (fsharp-wasm's strings are arrays of them) and no UTF-8 transcoding is written at all:
+
+```bash
+wasm-tools parse single-module.wat -o one.wasm
+wasm-tools component embed single-module.wit one.wasm --encoding utf16 -o one.emb.wasm
+wasm-tools component new one.emb.wasm -o one.component.wasm            # 918 bytes
+npx @bytecodealliance/jco@1.42.0 transpile one.component.wasm -o out   # Node 24: greet("Grüße ✓ 🚀 日本語") round-trips, emoji included
+```
+
+| what | result |
+|---|---|
+| `wasm-tools component embed --encoding utf16` + `component new` on that one module | a valid 918-byte component; `component wit` prints `export greet: func(name: string) -> string` |
+| jco 1.42.0 on Node 24 | the strings round-trip, surrogate pairs included |
+| memory | the allocator is a bump arena that grows the memory; `cabi_post_greet` resets it after the host has read the result |
+| cost, string in and out, jco's JavaScript doing the transcoding, loops in the adapter | 4 characters: 10 µs a call; 1 KB: 0.17 ms; 64 KB: 2.1 ms; 2 MB: 49 ms |
+
+What it means: bodies of a few KB cost tens to hundreds of microseconds a call at this boundary; megabytes cost tens of milliseconds, so large
+payloads want `list<u8>` and a bulk path, not `string`. A linear memory and a GC array have no bulk copy between them (`array.new_data` /
+`array.init_data` read a data segment, not the memory), so the adapter copies in a loop. Still not shown: records, lists of records, `option`,
+`result`, resources; the same module on wasmtime; a platform running the transpiled component.
+
