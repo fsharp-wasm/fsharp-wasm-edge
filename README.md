@@ -3,26 +3,87 @@
 The host that runs **F# programs compiled to WebAssembly GC** on the platforms people deploy to: **Cloudflare Workers (with Durable Objects), Vercel,
 Netlify, Deno, Bun and Node** — one module, a small adapter per platform, the same answers everywhere.
 
-> **Status: just started.** The code this repository is for exists and works, but it still lives in
-> [fsharp-wasm-backend](https://github.com/fsharp-wasm/fsharp-wasm-backend) (`server/`, `tests/platforms`, the deploy workflow) and is moving here.
-> Nothing is deployed to a platform yet. [docs/roadmap.md](docs/roadmap.md) has the order and the reasons.
-
-## What it will contain
+> **Status: nothing is deployed yet.** The host, the adapters and the tests work and run in CI; the deploy workflow is written and checked as far as it can
+> be without an account ([docs/deploy.md](docs/deploy.md) says what it needs and what each row of "verified" means). The first real deployments are
+> next on the [roadmap](docs/roadmap.md).
 
 ```text
-host/         the core (Request ⇄ module, one request at a time, a store loaded before and flushed after a call) and the adapters
-wit/          the WIT worlds a module implements — `ghost` first, then the generic `handler`
-dsl/          a typed F# DSL for the host (routes, stores, platform settings), usable from Fable projects
-fixtures/     the compiled modules the tests run, with the revision of the compiler and the source they came from
-tests/        the platform matrix (the same 26 checks everywhere, answers compared) and the live runner (the same checks against deployments)
-docs/         how to deploy, what each platform needs, the roadmap
+F# module  ──fsharp-wasm──▶  GhostTodo.wasm   (47 KB, WebAssembly GC, string ABI: exports)
+                                  │  handle()   reads the request, writes the response, one at a time
+   host/runtime/server.js  (the core: Request ⇄ module, store, strings)   ← web-standard Request / Response
+       ├─ adapters/node        http.createServer                     ├─ adapters/cloudflare  Worker + Durable Object
+       ├─ adapters/bun         Bun.serve                              ├─ adapters/vercel      Edge + Node functions
+       └─ adapters/deno        Deno.serve + Deno KV                   └─ adapters/netlify     Edge function + Function
 ```
 
-## Why a separate repository
-
-[fsharp-wasm-backend](https://github.com/fsharp-wasm/fsharp-wasm-backend) is where backend **modules** are written (F#, compiled by
-[fsharp-wasm](https://github.com/fsharp-wasm/fsharp-wasm)); this repository is where they **run**. A module should not need to know whether it is
+The modules are written in [fsharp-wasm-backend](https://github.com/fsharp-wasm/fsharp-wasm-backend) (the demo is **Ghost Todo**: a todo list whose
+every change is a GGBP patch that a client applies to a shadow). This repository is where they **run**: a module should not need to know whether it is
 served from a Worker, a Vercel function or a Deno process, and a platform adapter should not need the compiler to be tested.
+
+## What is verified
+
+`npm ci && node build/package.mjs && node tests/platforms/run.mjs` runs **the same 26 checks on every platform** and compares what the platforms answer:
+identical answers in 20 steps (unicode text, the patches decoded and applied to a shadow, 12 parallel requests, a log of 64 patches that rolls over,
+404 / 405 / 400, CORS, the page). Where a platform has storage, the state survives a restart.
+
+| platform | what runs here | how real | state |
+|---|---|---|---|
+| Node 24 | the packaged adapter, as a process | the platform's own runtime | a JSON file, survives a restart |
+| Bun 1.4 | the packaged adapter, as a process | the platform's own runtime | a JSON file, survives a restart |
+| Deno 2.9 / Deno Deploy | the packaged adapter, as a process | the platform's own runtime | Deno KV, survives a restart |
+| Cloudflare Workers | the Worker and the Durable Object on **workerd** (through Miniflare) | the platform's runtime and its Durable Object storage; **not deployed** | Durable Object storage, survives a restart |
+| Vercel Edge Functions | the edge adapter, bundled with `?module` as a ready `WebAssembly.Module`, in the Edge Runtime sandbox (`@edge-runtime/vm`) | an emulation; Vercel's bundler and platform are not exercised; **not deployed** | memory per instance |
+| Vercel Functions (Node) | the Node adapter's handlers (mounted at `/api/node`), called in a Node 24 process | the handler contract; **not deployed** | memory per instance |
+| Netlify Edge Functions | the edge adapter under Deno, given a `Request` | Netlify's edge runtime is Deno; Netlify's bundler is not exercised by the matrix; **not deployed** | memory per instance |
+| Netlify Functions | the function's handler, called in a Node 24 process | the handler contract; **not deployed** | memory per instance |
+
+Beyond the matrix, CI runs what the platforms' own tools say about the packages, without an account: `wrangler deploy --dry-run` for Cloudflare and
+`netlify build --offline` for Netlify (Vercel's CLI wants a token even for a local build, so that row is not checked).
+
+Not supported: **Fastly Compute, Fermyon Spin, WasmEdge** run WASI *components*, not a module with a JavaScript host. Components (WIT worlds, linked by a
+small host) are the plan for those and for a cleaner contract; see the [roadmap](docs/roadmap.md).
+
+## Why the string ABI is "exports"
+
+The compiler's default lets a string cross the module boundary through the JS String Builtins (`wasm:js-string`). A platform that hands the module over
+**precompiled** — Cloudflare Workers and Vercel Edge import a `.wasm` as a ready `WebAssembly.Module` — compiles it without those builtins, and
+instantiating fails (`Import "wasm:js-string": module is not an object or function`; checked in workerd). So these modules are built with
+`WASMGC_STRING_ABI=exports`: no `wasm:js-string` import at all, strings read and built through four exports of the module. It works on every engine
+with WebAssembly GC. `tools/fixture.mjs` refuses a module that imports the builtins.
+
+## Layout
+
+| path | what it is |
+|---|---|
+| `host/runtime` | the core (`server.js`), the stores (`stores.js`: memory, JSON file, Deno KV, Durable Object storage), the generated assets |
+| `host/adapters` | the platform adapters, each a few lines over the core, and their configuration (`wrangler.toml`, `vercel.json`, `netlify.toml`, `deno.json`) |
+| `host/client` | the GGBP client (`ggbp.js`) and the page that keeps a shadow |
+| `build/` | `package.mjs` lays out `dist/platforms/<name>/` for each platform from a module; `assets.mjs` generates the page |
+| `fixtures/` | `GhostTodo.wasm` and `GhostTodo.provenance.json`: the module the tests run, with the revisions of the source, the compiler and the base library it was built from |
+| `tests/platforms` | the matrix (`run.mjs`) and the live runner (`live.mjs`: the same checks against deployments) |
+| `tools/fixture.mjs` | `set` records a new module with its provenance, `check` verifies the checked-in one |
+| `.github/workflows` | `ci.yml` (lint, matrix, package checks), `deploy.yml` (the CI artifact to Cloudflare, Vercel and Netlify, then the live check) |
+| `docs/` | [deploy.md](docs/deploy.md), [platforms.md](docs/platforms.md), [roadmap.md](docs/roadmap.md) |
+
+## Build and run
+
+```bash
+npm ci
+node build/package.mjs                       # dist/platforms/{node,bun,deno,cloudflare,vercel,netlify} from fixtures/GhostTodo.wasm
+node dist/platforms/node/index.mjs           # http://localhost:8787/
+node tests/platforms/run.mjs                 # the matrix; optionally: node bun deno netlify-edge cloudflare vercel-edge vercel-node netlify-functions
+GHOST_WASM=/path/to/Other.wasm node build/package.mjs    # package another module
+```
+
+The matrix needs Node 24, `deno` and `bun` on the PATH (or `TOOLS_BIN` for `deno`).
+
+## What a module cannot do
+
+A module is **synchronous**: it cannot wait for a network call (no JSPI yet), so the core reads the request body and loads the store before the call and
+flushes the store after it. State that outlives a request lives in the module's memory and is persisted through the store; an instance serves requests
+one at a time. On Cloudflare a Durable Object per room is exactly that. On Vercel and Netlify an instance forgets between cold starts and instances do
+not share memory: the memory store is what those platforms give; for state that outlives an instance, put a store of `host/runtime/stores.js` over
+Vercel KV / Blob or Netlify Blobs (not written: nothing here can test it).
 
 ## Principles
 
@@ -33,4 +94,5 @@ served from a Worker, a Vercel function or a Deno process, and a platform adapte
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). The host core, the adapters, the matrix and the deploy workflow were written in
+fsharp-wasm-backend and moved here.
