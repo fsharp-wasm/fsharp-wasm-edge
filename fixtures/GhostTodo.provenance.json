@@ -8,16 +8,16 @@
   "builtFrom": {
     "source": {
       "repository": "fsharp-wasm/fsharp-wasm-backend",
-      "commit": "bf73e3833a5cef8cba5b9dcf8482fedc87e65304",
+      "commit": "d025f7047da75f3e3fd2080499441918758a6dcc",
       "path": "demos/ghost-todo"
     },
     "compiler": {
       "repository": "fsharp-wasm/fsharp-wasm",
-      "commit": "2e63a0cbd18035a6cbf382f4127152803cbd8d9b"
+      "commit": "73f34dd66c5176451d79dfe009b8a6878276f58f"
     },
     "core": {
       "repository": "fsharp-wasm/fsharp-wasm-core",
-      "commit": "1c592e748a0c93ba8b040b21b55b808322dbd3aa"
+      "commit": "cc6b1c03634629bad047ac2230742ff0f14e5897"
     }
   },
   "recorded": "2026-11-14T16:15:02.291Z"
