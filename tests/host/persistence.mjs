@@ -66,6 +66,19 @@ check("… and serves the patches of the last versions without a resync", Array.
   check("… and its next id", second.add("next").body.todo.id === first.add("next").body.todo.id);
 }
 
+// ---- storages that take a limited number of keys per call get what they can take ---------------------------------------------------------------------------------------
+{
+  const { durableObjectStore } = await import("../../host/runtime/stores.js");
+  const calls = [];
+  const storage = { list: async () => new Map(), put: async (o) => calls.push(["put", Object.keys(o).length]), delete: async (ks) => calls.push(["delete", ks.length]) };
+  const store = durableObjectStore(storage);
+  await store.load();
+  for (let i = 0; i < 300; i++) store.put(`k${i}`, "v");
+  for (let i = 0; i < 300; i++) store.delete(`gone${i}`);
+  await store.flush();
+  check(`a Durable Object gets at most 128 keys a call (${calls.map((c) => c.join(" ")).join(", ")})`, calls.length >= 6 && calls.every(([, n]) => n <= 128) && calls.filter((c) => c[0] === "put").reduce((n, c) => n + c[1], 0) === 300 && calls.filter((c) => c[0] === "delete").reduce((n, c) => n + c[1], 0) === 300);
+}
+
 // ---- the file store is a journal ----------------------------------------------------------------------------------------------------------------------------------------
 const dir = await mkdtemp(join(tmpdir(), "ghost-journal-"));
 try {

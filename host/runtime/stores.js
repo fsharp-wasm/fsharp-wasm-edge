@@ -5,6 +5,9 @@
 //
 //   cachedStore({ read, write })   read(): Promise<Record<string, string>>   write(puts, deletes): Promise<void>
 
+/** `items` in groups of at most `size`: the storages below take a limited number of keys per call (a Durable Object 128, a Deno KV atomic operation 1 000 mutations). */
+const groups = (items, size) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size));
+
 /** A store over a platform's storage; `reloadEachRequest` makes load() read again (a stateless platform, instances that share the storage). */
 export function cachedStore({ read, write }) {
   let cache = new Map();
@@ -89,10 +92,12 @@ export function denoKvStore(kv, prefix = "default") {
       return all;
     },
     write: async (puts, deletes) => {
-      const op = kv.atomic();
-      for (const [k, v] of Object.entries(puts)) op.set([...base, k], v);
-      for (const k of deletes) op.delete([...base, k]);
-      await op.commit();
+      const changes = [...Object.entries(puts).map(([k, v]) => ["set", k, v]), ...deletes.map((k) => ["delete", k])];
+      for (const group of groups(changes, 500)) {
+        const op = kv.atomic();
+        for (const [kind, k, v] of group) kind === "set" ? op.set([...base, k], v) : op.delete([...base, k]);
+        await op.commit();
+      }
     },
   });
 }
@@ -102,8 +107,8 @@ export function durableObjectStore(storage) {
   return cachedStore({
     read: async () => Object.fromEntries(await storage.list()),
     write: async (puts, deletes) => {
-      if (Object.keys(puts).length) await storage.put(puts);
-      if (deletes.length) await storage.delete(deletes);
+      for (const group of groups(Object.entries(puts), 128)) await storage.put(Object.fromEntries(group));
+      for (const group of groups(deletes, 128)) await storage.delete(group);
     },
   });
 }
