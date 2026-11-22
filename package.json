@@ -9,6 +9,7 @@
     "assets": "node build/assets.mjs",
     "package": "node build/package.mjs",
     "test:platforms": "node tests/platforms/run.mjs",
+    "test:persistence": "node tests/host/persistence.mjs",
     "bench": "node bench/run.mjs",
     "bench:workerd": "node bench/workerd.mjs",
     "bench:size": "node bench/size.mjs"

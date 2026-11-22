@@ -31,6 +31,8 @@ jobs:
       - run: npm ci
       - name: The module is the one its provenance names
         run: node tools/fixture.mjs check
+      - name: Persistence (the host, the module, the journal of the file store)
+        run: node tests/host/persistence.mjs
       - name: Package the platforms
         run: node build/package.mjs
       - name: The same scenario on every platform
