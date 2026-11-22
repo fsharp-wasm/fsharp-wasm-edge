@@ -8,11 +8,15 @@
   "scripts": {
     "assets": "node build/assets.mjs",
     "package": "node build/package.mjs",
-    "test:platforms": "node tests/platforms/run.mjs"
+    "test:platforms": "node tests/platforms/run.mjs",
+    "bench": "node bench/run.mjs",
+    "bench:workerd": "node bench/workerd.mjs",
+    "bench:size": "node bench/size.mjs"
   },
   "devDependencies": {
     "@edge-runtime/vm": "5.0.0",
     "esbuild": "^0.25.0",
+    "hono": "^4.13.20",
     "miniflare": "^4.20260730.0"
   }
 }

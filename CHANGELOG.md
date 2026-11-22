@@ -11,6 +11,10 @@ All notable changes to this repository are documented here (newest first).
   (`/canvas` to `canvas/`, relative, so that it holds below a base path); `build/assets.mjs` takes the fixture into `host/runtime/assets.js`; `tools/fixture.mjs set-canvas` records it with the revisions of the source,
   the compiler, the base library, the widgets and the runtime, and `check` refuses a canvas module that imports the server's host binding. The matrix has three checks more: **29 checks, identical on all 8 platforms** (measured
   2026-11-22: Node, Bun, Deno, Netlify edge function, workerd through Miniflare, the Vercel Edge sandbox, the Vercel and Netlify function handlers).
+- **A benchmark** (`bench/`): the Ghost Todo module against hand-written JavaScript and Hono, three implementations that answer 18 requests identically (checked before anything is timed), on Node, Bun and workerd, six scenarios
+  (a poll, the state, a toggle, add and remove; 100 and 5 000 todos), and the size that is shipped. On 2026-11-22, locally and in-process: close on a poll (1.7 to 2.4 times on Node and workerd), 14 to 24 times slower on Node
+  wherever the answer or the persisted snapshot is long; a profile puts 42.5 % of that in the Exports string ABI's one call per character (`docs/STATUS.md` of fsharp-wasm has it as a known gap). Not measured: a network, a platform
+  of a provider, the JS String Builtins ABI. `hono` is a new development dependency.
 - **The host moved here from fsharp-wasm-backend**: the core and the stores (`host/runtime`), the adapters for Node, Bun, Deno, Cloudflare Workers
   (with a Durable Object), Vercel and Netlify (`host/adapters`), the GGBP client (`host/client`), the packager (`build/`), the platform matrix
   and the live runner (`tests/platforms`), and the deploy workflow with its documentation.

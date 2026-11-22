@@ -60,6 +60,7 @@ with WebAssembly GC. `tools/fixture.mjs` refuses a module that imports the built
 | `host/client` | the GGBP client (`ggbp.js`) and the page that keeps a shadow (the first client, JavaScript and the DOM) |
 | `build/` | `package.mjs` lays out `dist/platforms/<name>/` for each platform from a module; `assets.mjs` generates the page |
 | `fixtures/` | `GhostTodo.wasm` and `GhostTodo.provenance.json`: the module the tests run, with the revisions of the source, the compiler and the base library it was built from. `canvas/` and `GhostTodoCanvas.provenance.json`: the second client of the same API, written in F# with widgets and drawn onto a canvas (page, module, runtime), served by every platform at `/canvas/`; built from fsharp-wasm-backend (`bash build/build.sh --module canvas`) |
+| `bench/` | the benchmark: the module against hand-written JavaScript and Hono on Node, Bun and workerd, with the numbers and what they mean ([bench/README.md](bench/README.md)) |
 | `tests/platforms` | the matrix (`run.mjs`) and the live runner (`live.mjs`: the same checks against deployments) |
 | `tools/fixture.mjs` | `set` records a new module with its provenance, `set-canvas` the canvas client, `check` verifies the checked-in ones (the canvas client must not import the host binding of the server) |
 | `.github/workflows` | `ci.yml` (lint, matrix, package checks), `deploy.yml` (the CI artifact to Cloudflare, Vercel and Netlify, then the live check) |
