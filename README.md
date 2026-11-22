@@ -1,5 +1,9 @@
 # fsharp-wasm-edge
 
+<!-- platform -->
+> **Part of the [fsharp-wasm platform](https://fsharp-wasm.github.io/projects/)**: server and edge. Runs modules compiled from any F# program; the first are those of [backend](https://github.com/fsharp-wasm/fsharp-wasm-backend). Used by the deployments, once there are any.
+> [All projects](https://fsharp-wasm.github.io/projects/) · [Roadmap](https://fsharp-wasm.github.io/docs/roadmap/) · [Tests](https://fsharp-wasm.github.io/tests/) · [Benchmarks](https://fsharp-wasm.github.io/benchmarks/) · [Live demos](https://fsharp-wasm.github.io/demos/)
+
 The host that runs **F# programs compiled to WebAssembly GC** on the platforms people deploy to: **Cloudflare Workers (with Durable Objects), Vercel,
 Netlify, Deno, Bun and Node** — one module, a small adapter per platform, the same answers everywhere.
 
