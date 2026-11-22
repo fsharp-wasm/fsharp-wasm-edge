@@ -112,7 +112,11 @@ export function createServer({ module, hostName, store, reload = false, assets =
   // the Exports ABI: strings are the module's own, read and built through its exports (known once it is instantiated)
   const exportsAbi = !usesBuiltins(compiled);
   let ex = null;
-  const readString = (ref) => {
+  let bulk = false;
+  // A module compiled after 2026-11-22 also exports a linear memory and three functions that move a whole string through it (`__str_reserve`, `__str_to_mem`, `__str_from_mem`,
+  // UTF-16 code units from address 0): two calls and one copy instead of a call per character, which was 42.5 % of a request that answered 218 000 characters.  An older module,
+  // or a string the memory cannot hold, goes through the per-character exports.
+  const readPerChar = (ref) => {
     const n = ex.__str_len(ref);
     let out = "";
     for (let i = 0; i < n; i += 4096) {
@@ -122,10 +126,30 @@ export function createServer({ module, hostName, store, reload = false, assets =
     }
     return out;
   };
-  const makeString = (text) => {
+  const makePerChar = (text) => {
     const ref = ex.__str_new(text.length);
     for (let i = 0; i < text.length; i++) ex.__str_set(ref, i, text.charCodeAt(i));
     return ref;
+  };
+  const readString = (ref) => {
+    if (bulk) {
+      const n = ex.__str_to_mem(ref);
+      if (n >= 0) {
+        const units = new Uint16Array(ex.memory.buffer, 0, n);          // taken after the call: it may have grown the memory
+        let out = "";
+        for (let i = 0; i < n; i += 8192) out += String.fromCharCode.apply(null, units.subarray(i, i + 8192));
+        return out;
+      }
+    }
+    return readPerChar(ref);
+  };
+  const makeString = (text) => {
+    if (bulk && ex.__str_reserve(text.length) === 0) {
+      const units = new Uint16Array(ex.memory.buffer, 0, text.length);
+      for (let i = 0; i < text.length; i++) units[i] = text.charCodeAt(i);
+      return ex.__str_from_mem(text.length);
+    }
+    return makePerChar(text);
   };
   const bridge = (name, fn) => {
     if (!exportsAbi) return fn;
@@ -153,6 +177,7 @@ export function createServer({ module, hostName, store, reload = false, assets =
     if (!instance) {
       instance = new WebAssembly.Instance(compiled, imports);
       ex = instance.exports;
+      bulk = typeof ex.__str_to_mem === "function" && typeof ex.__str_from_mem === "function" && typeof ex.__str_reserve === "function" && ex.memory instanceof WebAssembly.Memory;
       if (exportsAbi && !(ex.__str_len && ex.__str_new)) throw new Error("the module has neither the JS String Builtins nor the string accessor exports");
     }
     return instance;
