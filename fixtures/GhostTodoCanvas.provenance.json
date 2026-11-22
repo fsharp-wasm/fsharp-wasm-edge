@@ -1,0 +1,55 @@
+{
+  "module": "GhostTodoCanvas.wasm",
+  "bytes": 197446,
+  "sha256": "7c80963bd21ab055bb1a5a1eb738bb54fe44d70f6e6f87b3b0fb03632d52c0ab",
+  "stringAbi": "js-string builtins",
+  "imports": 40,
+  "exports": 37,
+  "files": [
+    "GhostTodoCanvas.wasm",
+    "index.html",
+    "runtime/boot.js",
+    "runtime/canvas.js",
+    "runtime/clipboard.js",
+    "runtime/components.js",
+    "runtime/cookies.js",
+    "runtime/core.js",
+    "runtime/dom.js",
+    "runtime/embed.js",
+    "runtime/events.js",
+    "runtime/gfx.js",
+    "runtime/gpu.js",
+    "runtime/indexeddb.js",
+    "runtime/location.js",
+    "runtime/net.js",
+    "runtime/pointer.js",
+    "runtime/pubsub.js",
+    "runtime/storage.js",
+    "runtime/timing.js",
+    "runtime/workers.js"
+  ],
+  "builtFrom": {
+    "source": {
+      "repository": "fsharp-wasm/fsharp-wasm-backend",
+      "commit": "2e924ce81af7bd867c0f3a92713dad0b2d0a5426",
+      "path": "demos/ghost-todo-canvas"
+    },
+    "compiler": {
+      "repository": "fsharp-wasm/fsharp-wasm",
+      "commit": "e820a4e3af38b74c751fc3e90fb9065b1126e476"
+    },
+    "core": {
+      "repository": "fsharp-wasm/fsharp-wasm-core",
+      "commit": "529ec49eb4d740e403a4725bcd881620fa8b74d0"
+    },
+    "graphics": {
+      "repository": "fsharp-wasm/fsharp-wasm-graphics",
+      "commit": "4299f365d46ae3901083d48800d70e0420970200"
+    },
+    "runtime": {
+      "repository": "fsharp-wasm/fsharp-wasm-runtime",
+      "commit": "dc56bd70aba3bbf23ae8ad82d5ffc6dd8e4106e2"
+    }
+  },
+  "recorded": "2026-11-22T09:51:22.917Z"
+}

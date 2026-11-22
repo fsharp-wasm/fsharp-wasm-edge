@@ -22,9 +22,9 @@ served from a Worker, a Vercel function or a Deno process, and a platform adapte
 
 ## What is verified
 
-`npm ci && node build/package.mjs && node tests/platforms/run.mjs` runs **the same 26 checks on every platform** and compares what the platforms answer:
+`npm ci && node build/package.mjs && node tests/platforms/run.mjs` runs **the same 29 checks on every platform** and compares what the platforms answer:
 identical answers in 20 steps (unicode text, the patches decoded and applied to a shadow, 12 parallel requests, a log of 64 patches that rolls over,
-404 / 405 / 400, CORS, the page). Where a platform has storage, the state survives a restart.
+404 / 405 / 400, CORS, the page, and the canvas client below `/canvas/`: its page, its WebAssembly module and its runtime). Where a platform has storage, the state survives a restart.
 
 | platform | what runs here | how real | state |
 |---|---|---|---|
@@ -57,11 +57,11 @@ with WebAssembly GC. `tools/fixture.mjs` refuses a module that imports the built
 |---|---|
 | `host/runtime` | the core (`server.js`), the stores (`stores.js`: memory, JSON file, Deno KV, Durable Object storage), the generated assets |
 | `host/adapters` | the platform adapters, each a few lines over the core, and their configuration (`wrangler.toml`, `vercel.json`, `netlify.toml`, `deno.json`) |
-| `host/client` | the GGBP client (`ggbp.js`) and the page that keeps a shadow |
+| `host/client` | the GGBP client (`ggbp.js`) and the page that keeps a shadow (the first client, JavaScript and the DOM) |
 | `build/` | `package.mjs` lays out `dist/platforms/<name>/` for each platform from a module; `assets.mjs` generates the page |
-| `fixtures/` | `GhostTodo.wasm` and `GhostTodo.provenance.json`: the module the tests run, with the revisions of the source, the compiler and the base library it was built from |
+| `fixtures/` | `GhostTodo.wasm` and `GhostTodo.provenance.json`: the module the tests run, with the revisions of the source, the compiler and the base library it was built from. `canvas/` and `GhostTodoCanvas.provenance.json`: the second client of the same API, written in F# with widgets and drawn onto a canvas (page, module, runtime), served by every platform at `/canvas/`; built from fsharp-wasm-backend (`bash build/build.sh --module canvas`) |
 | `tests/platforms` | the matrix (`run.mjs`) and the live runner (`live.mjs`: the same checks against deployments) |
-| `tools/fixture.mjs` | `set` records a new module with its provenance, `check` verifies the checked-in one |
+| `tools/fixture.mjs` | `set` records a new module with its provenance, `set-canvas` the canvas client, `check` verifies the checked-in ones (the canvas client must not import the host binding of the server) |
 | `.github/workflows` | `ci.yml` (lint, matrix, package checks), `deploy.yml` (the CI artifact to Cloudflare, Vercel and Netlify, then the live check) |
 | `docs/` | [deploy.md](docs/deploy.md), [platforms.md](docs/platforms.md), [roadmap.md](docs/roadmap.md), [spikes/wit-glue](docs/spikes/wit-glue/README.md) (a WasmGC module as a WIT component) |
 

@@ -53,11 +53,25 @@ export function pathBelow(basePath, request) {
   return path.startsWith(`${basePath}/`) ? path.slice(basePath.length) : null;
 }
 
-/** The response to a GET for one of `assets` (a map path -> { type, body }), or null. */
+const decoded = new WeakMap();          // an asset's bytes, decoded once
+
+/**
+ * The response to a GET for one of `assets` (a map path -> asset), or null.  An asset is one of
+ *   { type, body }      text
+ *   { type, base64 }    bytes (a WebAssembly module): carried as text so that the table is one JavaScript module on every platform
+ *   { redirect }        a redirect, to an address relative to the one asked for ("canvas/" for "/canvas"), so that it holds below any base path
+ */
 export function serveAsset(assets, request, basePath = "") {
   const path = request.method === "GET" ? pathBelow(basePath, request) : null;
   const asset = path === null ? undefined : assets[path];
-  return asset ? new Response(asset.body, { headers: { "content-type": asset.type, "cache-control": "no-cache" } }) : null;
+  if (!asset) return null;
+  if (asset.redirect) return new Response(null, { status: 308, headers: { location: asset.redirect } });
+  let body = asset.body;
+  if (asset.base64 !== undefined) {
+    if (!decoded.has(asset)) decoded.set(asset, Uint8Array.from(atob(asset.base64), (c) => c.charCodeAt(0)));
+    body = decoded.get(asset);
+  }
+  return new Response(body, { headers: { "content-type": asset.type, "cache-control": "no-cache" } });
 }
 
 /**

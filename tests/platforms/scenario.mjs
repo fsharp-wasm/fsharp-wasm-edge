@@ -28,6 +28,14 @@ export async function runScenario(send, { host }) {
   r = await send("GET", ""); 
   check("the page is served", r.status === 200 && r.type.includes("text/html") && r.text.includes("Ghost Todo"), `${r.status} ${r.type}`);
 
+  // ── the canvas client, the second client of this API, is served beside it: its page, its module (WebAssembly) and the runtime it loads
+  r = await send("GET", "canvas/");
+  check("the canvas client's page is served", r.status === 200 && r.type.includes("text/html") && r.text.includes("GhostTodoCanvas.wasm"), `${r.status} ${r.type}`);
+  r = await send("GET", "canvas/GhostTodoCanvas.wasm");
+  check("its module is served as WebAssembly", r.status === 200 && r.type === "application/wasm" && r.bytes.length > 100000 && [0, 0x61, 0x73, 0x6d].every((b, i) => r.bytes[i] === b), `${r.status} ${r.type} ${r.bytes?.length}`);
+  r = await send("GET", "canvas/runtime/boot.js");
+  check("and the runtime it loads", r.status === 200 && r.type.includes("javascript") && r.text.includes("export async function boot"), `${r.status} ${r.type}`);
+
   // ── mutations: every one is a GGBP patch
   r = await post("api/todos", { text: "Write the docs" }, { "x-transaction": "7" }); log("add", r);
   let j = json(r);

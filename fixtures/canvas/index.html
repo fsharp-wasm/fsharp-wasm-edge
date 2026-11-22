@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ghost Todo on a canvas — F# widgets as WebAssembly GC</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { height: 100%; margin: 0; background: #0f172a; }
+    /* the whole page is the canvas: the module draws the card, the fields and the buttons */
+    #gfx { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
+    #status { position: fixed; left: 1rem; bottom: 1rem; margin: 0; font: 14px/1.4 system-ui, sans-serif; color: #94a3b8; }
+    #status:empty { display: none; }
+    noscript { position: fixed; inset: 1rem; font: 16px system-ui, sans-serif; color: #f1f5f9; }
+  </style>
+</head>
+<body>
+  <canvas id="gfx" tabindex="0" role="application" aria-label="Ghost Todo: a todo list drawn on a canvas. Tab moves between the field and the buttons, Enter adds."></canvas>
+  <p id="status">Loading…</p>
+  <noscript>This page runs a WebAssembly module and needs JavaScript.</noscript>
+  <!-- This page is served at <host>/canvas/ and talks to the API of the same host (../api/…).  ?room=NAME picks a room, ?api=https://host/ another API (the module answers CORS). -->
+  <script type="module">
+    import { boot } from "./runtime/boot.js";
+    import { mount } from "./runtime/gfx.js";
+
+    const instance = await boot({ wasm: new URL("GhostTodoCanvas.wasm", import.meta.url), entry: "start" });
+    if (instance) {
+      mount(instance, "gfx");
+      document.getElementById("status").textContent = "";     // the status is for errors; a module that runs needs no banner
+      document.getElementById("gfx").focus();                // type at once
+    }
+  </script>
+</body>
+</html>

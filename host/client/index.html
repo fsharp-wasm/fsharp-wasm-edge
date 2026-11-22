@@ -24,6 +24,7 @@
 <body>
 <h1>Ghost Todo</h1>
 <p class="sub">An F# module compiled to WebAssembly GC runs this API. Every change is a <abbr title="Ghost-Graph Binary Patch">GGBP</abbr> patch; this page keeps a shadow of the list and applies the patches. Open it in two tabs.</p>
+<p class="sub">The same list, drawn on a canvas by F# widgets that are compiled to WebAssembly GC too: <a href="canvas/">the canvas client</a>. Both are clients of this server; what one does, the other shows.</p>
 <form id="add"><input id="text" placeholder="What needs doing?" autocomplete="off" maxlength="200" required><button>Add</button></form>
 <ul id="list"></ul>
 <div class="stats">
