@@ -35,19 +35,46 @@ export function cachedStore({ read, write }) {
 /** Memory only: state lives as long as the instance (every platform; a serverless instance forgets between cold starts). */
 export const memoryStore = () => cachedStore({ read: async () => ({}), write: async () => {} });
 
-/** A JSON file (Node, Bun): the whole state in one file, replaced atomically. */
+/**
+ * A journal file (Node, Bun): every flush appends one line with what it changed (`{"p": {key: value}, "d": [key]}`), so a request costs what it wrote and not the size of the state.
+ * The file is read whole on load, a line after another, the last one standing; a line that does not parse (a write that was cut short) ends the journal there. It is rewritten as one line,
+ * atomically, when it has grown past twice its live content. A file of the earlier format, one JSON object of the keys, is read as such.
+ */
 export function fileStore(path, fs) {
+  let live = new Map();
+  let lines = 0;
+  const compactLine = () => JSON.stringify({ p: Object.fromEntries(live) }) + "\n";
   return cachedStore({
     read: async () => {
-      try { return JSON.parse(await fs.readFile(path, "utf8")); } catch (e) { if (e.code === "ENOENT") return {}; throw e; }
+      let text = "";
+      try { text = await fs.readFile(path, "utf8"); } catch (e) { if (e.code !== "ENOENT") throw e; }
+      live = new Map();
+      lines = 0;
+      for (const line of text.split("\n")) {
+        if (!line) continue;
+        let record;
+        try { record = JSON.parse(line); } catch { break; }
+        if (record && (typeof record.p === "object" || Array.isArray(record.d))) {
+          for (const [k, v] of Object.entries(record.p ?? {})) live.set(k, v);
+          for (const k of record.d ?? []) live.delete(k);
+        } else if (record && typeof record === "object") {
+          for (const [k, v] of Object.entries(record)) live.set(k, v);          // the earlier format
+        }
+        lines++;
+      }
+      return Object.fromEntries(live);
     },
     write: async (puts, deletes) => {
-      let all = {};
-      try { all = JSON.parse(await fs.readFile(path, "utf8")); } catch (e) { if (e.code !== "ENOENT") throw e; }
-      for (const d of deletes) delete all[d];
-      Object.assign(all, puts);
-      await fs.writeFile(`${path}.tmp`, JSON.stringify(all));
-      await fs.rename(`${path}.tmp`, path);
+      for (const [k, v] of Object.entries(puts)) live.set(k, v);
+      for (const k of deletes) live.delete(k);
+      if (lines + 1 > 2 * live.size + 64) {
+        await fs.writeFile(`${path}.tmp`, compactLine());
+        await fs.rename(`${path}.tmp`, path);
+        lines = 1;
+      } else {
+        await fs.appendFile(path, JSON.stringify({ p: puts, d: deletes }) + "\n");
+        lines++;
+      }
     },
   });
 }

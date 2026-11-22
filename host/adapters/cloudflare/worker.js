@@ -9,10 +9,14 @@ import { assets } from "./runtime/assets.js";
 
 export class GhostTodo {
   constructor(state) {
+    this.state = state;
     this.app = createServer({ module: wasm, hostName: "cloudflare-workers", store: durableObjectStore(state.storage) });
   }
-  fetch(request) {
-    return this.app.fetch(request);
+  async fetch(request) {
+    const response = await this.app.fetch(request);
+    // the module's `idle` call (folding its log into a checkpoint) runs after the response; the object is kept until it is done
+    this.state.waitUntil(this.app.settled());
+    return response;
   }
 }
 

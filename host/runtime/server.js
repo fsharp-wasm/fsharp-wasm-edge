@@ -107,6 +107,8 @@ export function createServer({ module, hostName, store, reload = false, assets =
     hostName: () => hostName,
     nowMs: () => Date.now(),
     log,
+    // the module asks to be called again (its `idle` export) once the response has gone out: work that need not make a request wait
+    requestIdle: () => { current.idle = true; },
   };
 
   // the Exports ABI: strings are the module's own, read and built through its exports (known once it is instantiated)
@@ -187,6 +189,27 @@ export function createServer({ module, hostName, store, reload = false, assets =
   let queue = Promise.resolve();
   const serialized = (task) => (queue = queue.then(task, task));
 
+  // `idle` runs as a task of its own in the same queue as the requests (the module has one state), after the response and one turn of the event loop, so the response is written first.
+  // A module that has no `idle` export is never asked; one that is asked and cannot be reached just does not get its call (it asks again with a later request).
+  let idleQueued = false;
+  const scheduleIdle = () => {
+    if (idleQueued) return;
+    idleQueued = true;
+    serialized(async () => {
+      idleQueued = false;
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await stringStore.load(reload);
+        const exports = ensureInstance().exports;
+        if (reload) exports.reset?.();
+        exports.idle?.();
+        await stringStore.flush();
+      } catch (e) {
+        log(`idle failed: ${e?.message ?? e}`);
+      }
+    });
+  };
+
   async function handle(request, path) {
     const url = new URL(request.url);
     const hasBody = request.method !== "GET" && request.method !== "HEAD";
@@ -200,7 +223,7 @@ export function createServer({ module, hostName, store, reload = false, assets =
     current = {
       method: request.method, path, query: url.search.replace(/^\?/, ""),
       headers: [...request.headers].flat().join("\n"), body: text,
-      status: 200, responseHeaders: [], payload: "", bytes: null, position: 0,
+      status: 200, responseHeaders: [], payload: "", bytes: null, position: 0, idle: false,
     };
     try {
       exports.handle();
@@ -209,6 +232,7 @@ export function createServer({ module, hostName, store, reload = false, assets =
       current = null;
     }
     await stringStore.flush();
+    if (done.idle) scheduleIdle();
     const empty = done.status === 204 || done.status === 304 || request.method === "HEAD";
     const response = new Response(empty ? null : done.payload, { status: done.status });
     // a name once, except those that may repeat
@@ -223,6 +247,11 @@ export function createServer({ module, hostName, store, reload = false, assets =
       if (path === null) return Promise.resolve(new Response("not found", { status: 404 }));
       const asset = serveAsset(assets, request, basePath);
       return asset ? Promise.resolve(asset) : serialized(() => handle(request, path));
+    },
+    /** Resolves when every task that was queued has run, the `idle` calls the module asked for included: a platform that ends an instance after the response (`waitUntil`) waits for it. */
+    async settled() {
+      let tail;
+      do { tail = queue; await tail; } while (tail !== queue);
     },
     /** Free-form facts for diagnostics. */
     describe: () => ({ hostName, stringAbi: exportsAbi ? "exports" : "builtins", engineBuiltins: supportsJsStringBuiltins() }),
