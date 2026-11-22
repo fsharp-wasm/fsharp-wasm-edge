@@ -1,24 +1,24 @@
 {
   "module": "GhostTodo.wasm",
-  "bytes": 47146,
-  "sha256": "1147b6dc5ab9c2598230632e6481143c1e962aa3b5103b383fb8d293f7a4e642",
+  "bytes": 49664,
+  "sha256": "a1b7d59a73be387b17831d535953a526e1756e1497f1edd9013e0caa6b8d97fe",
   "stringAbi": "exports",
   "imports": 15,
-  "exports": 29,
+  "exports": 19,
   "builtFrom": {
     "source": {
       "repository": "fsharp-wasm/fsharp-wasm-backend",
-      "commit": "d025f7047da75f3e3fd2080499441918758a6dcc",
+      "commit": "ff51e100f64d9651497756fc4530426d0bbdddfa",
       "path": "demos/ghost-todo"
     },
     "compiler": {
       "repository": "fsharp-wasm/fsharp-wasm",
-      "commit": "73f34dd66c5176451d79dfe009b8a6878276f58f"
+      "commit": "e8a281a2d50e286aa9d59193cf2460774d016f20"
     },
     "core": {
       "repository": "fsharp-wasm/fsharp-wasm-core",
-      "commit": "cc6b1c03634629bad047ac2230742ff0f14e5897"
+      "commit": "f4062dc7a30d35069dbcc4951320e84fd46a662e"
     }
   },
-  "recorded": "2026-11-14T16:15:02.291Z"
+  "recorded": "2026-11-22T15:15:02.272Z"
 }
