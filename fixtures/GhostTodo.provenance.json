@@ -1,8 +1,9 @@
 {
   "module": "GhostTodo.wasm",
-  "bytes": 59814,
-  "sha256": "a15066e8ea34e8d66e4b4b01c9380a085a5f65543e4efc3c2db460488b76b695",
+  "bytes": 37835,
+  "sha256": "f2ad1e2ab9a66938f5fd338b9d612a137d942b46c0f24d0afef2ead86c54c40c",
   "stringAbi": "exports",
+  "names": "stripped",
   "imports": 16,
   "exports": 24,
   "builtFrom": {
@@ -20,5 +21,5 @@
       "commit": "f4062dc7a30d35069dbcc4951320e84fd46a662e"
     }
   },
-  "recorded": "2026-11-22T18:07:17.080Z"
+  "recorded": "2026-11-24T15:24:27.549Z"
 }

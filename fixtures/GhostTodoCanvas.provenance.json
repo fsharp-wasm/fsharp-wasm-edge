@@ -1,8 +1,9 @@
 {
   "module": "GhostTodoCanvas.wasm",
-  "bytes": 200097,
-  "sha256": "2ba43e25372c3d64184ea40a808be81963f43b0dad9295978456611df8ce3dd5",
+  "bytes": 126254,
+  "sha256": "1e34a92703a98b8b8df416f2d20bc75fbf4255b3e424b391312ccb1f6d577223",
   "stringAbi": "js-string builtins",
+  "names": "stripped",
   "imports": 40,
   "exports": 37,
   "files": [
@@ -51,5 +52,5 @@
       "commit": "dc56bd70aba3bbf23ae8ad82d5ffc6dd8e4106e2"
     }
   },
-  "recorded": "2026-11-22T16:01:51.423Z"
+  "recorded": "2026-11-24T15:24:27.652Z"
 }

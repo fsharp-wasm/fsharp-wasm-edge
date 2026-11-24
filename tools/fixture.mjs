@@ -6,7 +6,9 @@
 //                                                                                              the canvas client the host serves below /canvas/: its page, its module, its runtime
 //   node tools/fixture.mjs check                                                              both are the ones their provenance names
 import { createHash } from "node:crypto";
-import { copyFile, cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -15,6 +17,16 @@ const provenancePath = `${root}fixtures/GhostTodo.provenance.json`;
 const canvasDir = `${root}fixtures/canvas`;
 const canvasProvenancePath = `${root}fixtures/GhostTodoCanvas.provenance.json`;
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+/** A fixture is recorded without its name section: it is for debuggers and profilers, a third of a module (measured 2026-11-24: 59 814 bytes with it, a third less without), and no host needs it. Needs wasm-tools on the PATH. */
+async function withoutNames(bytes) {
+  const dir = await mkdtemp(`${tmpdir()}/fixture-`);
+  try {
+    await writeFile(`${dir}/in.wasm`, bytes);
+    execFileSync("wasm-tools", ["strip", "-d", "^name$", `${dir}/in.wasm`, "-o", `${dir}/out.wasm`]);
+    return await readFile(`${dir}/out.wasm`);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+}
 
 /** What a host needs of a module: valid WebAssembly GC, and no import of the JS String Builtins (the Exports string ABI). */
 function inspect(bytes) {
@@ -51,11 +63,11 @@ if (command === "set") {
     console.error("usage: fixture.mjs set <module.wasm> --backend <40-hex sha> --compiler <40-hex sha> --core <40-hex sha>");
     process.exit(2);
   }
-  const bytes = await readFile(source);
+  const bytes = await withoutNames(await readFile(source));
   const shape = inspect(bytes);
-  await copyFile(source, wasmPath);
+  await writeFile(wasmPath, bytes);
   const provenance = {
-    module: "GhostTodo.wasm", bytes: bytes.length, sha256: sha256(bytes), stringAbi: "exports", ...shape,
+    module: "GhostTodo.wasm", bytes: bytes.length, sha256: sha256(bytes), stringAbi: "exports", names: "stripped", ...shape,
     builtFrom: {
       source: { repository: "fsharp-wasm/fsharp-wasm-backend", commit: revisions.backend, path: "demos/ghost-todo" },
       compiler: { repository: "fsharp-wasm/fsharp-wasm", commit: revisions.compiler },
@@ -72,13 +84,14 @@ if (command === "set") {
     console.error("usage: fixture.mjs set-canvas <dist/canvas> --backend <sha> --compiler <sha> --core <sha> --graphics <sha> --runtime <sha>   (each a 40-hex sha)");
     process.exit(2);
   }
-  const bytes = await readFile(`${source}/GhostTodoCanvas.wasm`);
+  const bytes = await withoutNames(await readFile(`${source}/GhostTodoCanvas.wasm`));
   const shape = inspectCanvas(bytes);
   await rm(canvasDir, { recursive: true, force: true });
   await mkdir(canvasDir, { recursive: true });
   await cp(source, canvasDir, { recursive: true });
+  await writeFile(`${canvasDir}/GhostTodoCanvas.wasm`, bytes);
   const provenance = {
-    module: "GhostTodoCanvas.wasm", bytes: bytes.length, sha256: sha256(bytes), stringAbi: "js-string builtins", ...shape, files: await filesOf(canvasDir),
+    module: "GhostTodoCanvas.wasm", bytes: bytes.length, sha256: sha256(bytes), stringAbi: "js-string builtins", names: "stripped", ...shape, files: await filesOf(canvasDir),
     builtFrom: {
       source: { repository: "fsharp-wasm/fsharp-wasm-backend", commit: revisions.backend, path: "demos/ghost-todo-canvas" },
       compiler: { repository: "fsharp-wasm/fsharp-wasm", commit: revisions.compiler },
