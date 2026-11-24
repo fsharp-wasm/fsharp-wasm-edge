@@ -97,6 +97,15 @@ Vercel KV / Blob or Netlify Blobs (not written: nothing here can test it).
 - **Accessible by default.** The GUI layer to come renders semantic HTML; WebAssembly computes, the page stays readable by people and assistive technology.
 - **Our own libraries.** Few dependencies, each one pinned.
 
+## Contributing
+
+Welcome. [CONTRIBUTING](https://github.com/fsharp-wasm/.github/blob/develop/CONTRIBUTING.md) is the organisation's guide and [AGENTS.md](AGENTS.md) says how the platform is worked on (the compiler comes first: a fault found here
+is fixed in the compiler, not worked around here).
+
+- **Run the tests:** `npm ci && node build/package.mjs && node tests/platforms/run.mjs` (the same checks on every platform).
+- **A good first contribution:** A platform adapter that is an emulation and could be a runtime, or a check the matrix lacks. Issues labelled [`good first issue`](https://github.com/fsharp-wasm/fsharp-wasm-edge/labels/good%20first%20issue) are the places to start.
+- **A change** goes to `develop` as a pull request, with a test that fails without it. Open an issue first for anything larger than a fix.
+
 ## License
 
 Apache-2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). The host core, the adapters, the matrix and the deploy workflow were written in
