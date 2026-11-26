@@ -26,7 +26,7 @@ npx vercel deploy
 ```
 
 `vercel.json` rewrites every path to `api/edge.js` (an Edge Function: `?module` makes the `.wasm` a ready `WebAssembly.Module`);
-`api/node.mjs` is the same on the Node.js runtime (24), mounted at `/api/node` (a rewrite hands it the sub-paths). State is memory per instance.
+`api/node.mjs` is the same on the Node.js runtime (24), mounted at `/api/node` (a rewrite hands it the sub-paths). State is in Redis (Upstash), shared by every instance: set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` in the project's environment; without them the answer is 503 ([deploy.md](deploy.md), Shared state).
 
 ## Netlify
 
@@ -36,7 +36,7 @@ npx netlify deploy
 ```
 
 `netlify/edge-functions/ghost.mjs` answers every path but `/fn` (Deno; the module's bytes travel in `wasm-bytes.js`, an edge function cannot read
-files); `netlify/functions/ghost.mjs` is the Node.js function, mounted under `/fn` (`basePath`) with `included_files = ["GhostTodo.wasm"]`.
+files); `netlify/functions/ghost.mjs` is the Node.js function, mounted under `/fn` (`basePath`) with `included_files = ["GhostTodo.wasm"]`. Both share their state in Redis (the same two variables in the site's environment).
 
 ## Deno and Deno Deploy
 

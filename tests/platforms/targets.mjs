@@ -17,13 +17,16 @@ const pkg = (name) => join(root, "dist/platforms", name);
 const tools = process.env.TOOLS_BIN ?? "";            // a directory with node / deno / bun when they are not on the PATH
 const exe = (name) => (tools && name !== "bun" ? join(tools, name) : name);
 
+// Vercel and Netlify keep the state in Redis (host/runtime/shared.js): the targets that do read where it is from their environment, and the runner gives each of them a room of its own.
+const storeEnv = (state) => (state.upstash ? { UPSTASH_REDIS_REST_URL: state.upstash.url, UPSTASH_REDIS_REST_TOKEN: state.upstash.token } : {});
+
 const freePort = () => new Promise((resolve) => { const s = netServer().listen(0, () => { const p = s.address().port; s.close(() => resolve(p)); }); });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** A server process of the platform's own runtime. */
-function processTarget({ name, host, command, args, env = () => ({}), cwd, persistent = false }) {
+function processTarget({ name, host, command, args, env = () => ({}), cwd, persistent = false, shared = false }) {
   return {
-    name, host, kind: "process", persistent,
+    name, host, kind: "process", persistent, shared,
     async start(state) {
       const port = await freePort();
       const child = spawn(command, args, { cwd, env: { ...process.env, PORT: String(port), ...env(state) }, stdio: ["ignore", "pipe", "pipe"] });
@@ -41,11 +44,13 @@ function processTarget({ name, host, command, args, env = () => ({}), cwd, persi
   };
 }
 
-/** A handler that is called in this process (the platform's entry contract, without its HTTP front). */
+/** A handler that is called in this process (the platform's entry contract, without its HTTP front).  `load(state, again)` imports the adapter afresh when `again` (a restart: nothing of the instance is left). */
+let imports = 0;
 const handlerTarget = ({ name, host, load, base = "http://localhost/" }) => ({
-  name, host, kind: "emulated", persistent: false,
-  async start() {
-    const handler = await load();
+  name, host, kind: "emulated", persistent: true, shared: true,
+  async start(state) {
+    Object.assign(process.env, storeEnv(state));              // the adapter reads its environment when it is imported
+    const handler = await load(`?instance=${++imports}`);
     return { send: async (method, path, init) => toResult(await handler(toRequest(base, method, path, init))), stop: async () => {} };
   },
 });
@@ -66,8 +71,9 @@ export const targets = [
   }),
   // Netlify Edge Functions run on Deno: the edge function of the package, served by a harness that gives it a Request
   processTarget({
-    name: "netlify-edge", host: "netlify-edge", command: exe("deno"), cwd: pkg("netlify"),
+    name: "netlify-edge", host: "netlify-edge", command: exe("deno"), cwd: pkg("netlify"), persistent: true, shared: true,
     args: ["run", "--allow-net", "--allow-read", "--allow-env", join(root, "tests/platforms/harness/netlify-edge.mjs")],
+    env: storeEnv,
   }),
   {
     // Cloudflare Workers: the Worker and the Durable Object of the package on workerd (through Miniflare), with persisted Durable Object storage
@@ -97,8 +103,8 @@ export const targets = [
   {
     // Vercel Edge Functions: the edge adapter bundled the way Vercel's loader makes it (`?module` is a ready WebAssembly.Module), run in
     // the Edge Runtime sandbox, which allows no compilation of WebAssembly from bytes
-    name: "vercel-edge", host: "vercel-edge", kind: "emulated", persistent: false,
-    async start() {
+    name: "vercel-edge", host: "vercel-edge", kind: "emulated", persistent: true, shared: true,
+    async start(state) {
       const dir = pkg("vercel");
       const bundle = await esbuild.build({
         entryPoints: [join(dir, "api/edge.js")], bundle: true, write: false, format: "iife", globalName: "edge", platform: "neutral",
@@ -108,7 +114,8 @@ export const targets = [
         } }],
       });
       const module = new WebAssembly.Module(await readFile(join(dir, "GhostTodo.wasm")));
-      const vm = new EdgeVM({ extend: (context) => { context.__WASM_MODULE = module; return context; } });
+      // the Edge Runtime has `process.env`: the environment of the project
+      const vm = new EdgeVM({ extend: (context) => { context.__WASM_MODULE = module; context.process = { env: storeEnv(state) }; return context; } });
       vm.evaluate(bundle.outputFiles[0].text);
       vm.evaluate(`globalThis.__call = async (method, url, headers, body) => {
         const res = await edge.default(new Request(url, { method, headers, body: body === null ? undefined : body }));
@@ -128,10 +135,10 @@ export const targets = [
   },
   handlerTarget({
     name: "vercel-node", host: "vercel-node", base: "http://localhost/api/node/",
-    load: async () => { const m = await import(pathToFileURL(join(pkg("vercel"), "api/node.mjs")).href); return (req) => ({ GET: m.GET, POST: m.POST, DELETE: m.DELETE, OPTIONS: m.OPTIONS, HEAD: m.HEAD })[req.method](req); },
+    load: async (again) => { const m = await import(pathToFileURL(join(pkg("vercel"), "api/node.mjs")).href + again); return (req) => ({ GET: m.GET, POST: m.POST, DELETE: m.DELETE, OPTIONS: m.OPTIONS, HEAD: m.HEAD })[req.method](req); },
   }),
   handlerTarget({
     name: "netlify-functions", host: "netlify-functions", base: "http://localhost/fn/",
-    load: async () => (await import(pathToFileURL(join(pkg("netlify"), "netlify/functions/ghost.mjs")).href)).default,
+    load: async (again) => (await import(pathToFileURL(join(pkg("netlify"), "netlify/functions/ghost.mjs")).href + again)).default,
   }),
 ];

@@ -40,10 +40,10 @@ identical answers in 20 steps (unicode text, the patches decoded and applied to 
 | Bun 1.4 | the packaged adapter, as a process | the platform's own runtime | a JSON file, survives a restart |
 | Deno 2.9 / Deno Deploy | the packaged adapter, as a process | the platform's own runtime | Deno KV, survives a restart |
 | Cloudflare Workers | the Worker and the Durable Object on **workerd** (through Miniflare) | the platform's runtime and its Durable Object storage; **not deployed** | Durable Object storage, survives a restart |
-| Vercel Edge Functions | the edge adapter, bundled with `?module` as a ready `WebAssembly.Module`, in the Edge Runtime sandbox (`@edge-runtime/vm`) | an emulation; Vercel's bundler and platform are not exercised; **not deployed** | memory per instance |
-| Vercel Functions (Node) | the Node adapter's handlers (mounted at `/api/node`), called in a Node 24 process | the handler contract; **not deployed** | memory per instance |
-| Netlify Edge Functions | the edge adapter under Deno, given a `Request` | Netlify's edge runtime is Deno; Netlify's bundler is not exercised by the matrix; **not deployed** | memory per instance |
-| Netlify Functions | the function's handler, called in a Node 24 process | the handler contract; **not deployed** | memory per instance |
+| Vercel Edge Functions | the edge adapter, bundled with `?module` as a ready `WebAssembly.Module`, in the Edge Runtime sandbox (`@edge-runtime/vm`) | an emulation; Vercel's bundler and platform are not exercised; **not deployed** | Redis (Upstash), shared by the instances, survives a restart |
+| Vercel Functions (Node) | the Node adapter's handlers (mounted at `/api/node`), called in a Node 24 process | the handler contract; **not deployed** | Redis (Upstash), shared by the instances, survives a restart |
+| Netlify Edge Functions | the edge adapter under Deno, given a `Request` | Netlify's edge runtime is Deno; Netlify's bundler is not exercised by the matrix; **not deployed** | Redis (Upstash), shared by the instances, survives a restart |
+| Netlify Functions | the function's handler, called in a Node 24 process | the handler contract; **not deployed** | Redis (Upstash), shared by the instances, survives a restart |
 
 Beyond the matrix, CI runs what the platforms' own tools say about the packages, without an account: `wrangler deploy --dry-run` for Cloudflare and
 `netlify build --offline` for Netlify (Vercel's CLI wants a token even for a local build, so that row is not checked).
@@ -63,7 +63,7 @@ with WebAssembly GC. `tools/fixture.mjs` refuses a module that imports the built
 
 | path | what it is |
 |---|---|
-| `host/runtime` | the core (`server.js`), the stores (`stores.js`: memory, JSON file, Deno KV, Durable Object storage), the generated assets |
+| `host/runtime` | the core (`server.js`), the stores (`stores.js`: memory, JSON file, Deno KV, Durable Object storage, and the versioned store over a shared database), the app of Vercel and Netlify (`shared.js`), the generated assets |
 | `host/adapters` | the platform adapters, each a few lines over the core, and their configuration (`wrangler.toml`, `vercel.json`, `netlify.toml`, `deno.json`) |
 | `host/client` | the GGBP client (`ggbp.js`) and the page that keeps a shadow (the first client, JavaScript and the DOM) |
 | `build/` | `package.mjs` lays out `dist/platforms/<name>/` for each platform from a module; `assets.mjs` generates the page |
@@ -84,15 +84,15 @@ node tests/platforms/run.mjs                 # the matrix; optionally: node bun 
 GHOST_WASM=/path/to/Other.wasm node build/package.mjs    # package another module
 ```
 
-The matrix needs Node 24, `deno` and `bun` on the PATH (or `TOOLS_BIN` for `deno`).
+The matrix needs Node 24, `deno`, `bun` and `redis-server` on the PATH (or `TOOLS_BIN` for `deno`, `REDIS_SERVER`): Vercel and Netlify keep their state in Redis, here a real one behind a stand-in for Upstash's REST protocol.
 
 ## What a module cannot do
 
 A module is **synchronous**: it cannot wait for a network call (no JSPI yet), so the core reads the request body and loads the store before the call and
 flushes the store after it. State that outlives a request lives in the module's memory and is persisted through the store; an instance serves requests
 one at a time. On Cloudflare a Durable Object per room is exactly that. On Vercel and Netlify an instance forgets between cold starts and instances do
-not share memory: the memory store is what those platforms give; for state that outlives an instance, put a store of `host/runtime/stores.js` over
-Vercel KV / Blob or Netlify Blobs (not written: nothing here can test it).
+not share memory, so the state is in a database and every request commits against the version it read; a request that lost runs again over what the
+winner wrote (`docs/deploy.md`, Shared state). A deployment with no database answers 503: there is no fallback to memory.
 
 ## Principles
 

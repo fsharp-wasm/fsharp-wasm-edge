@@ -44,7 +44,7 @@ for (const name of wanted) {
   const dir = `${out}${name}/`;
   await rm(dir, { recursive: true, force: true });
   await mkdir(`${dir}runtime`, { recursive: true });
-  for (const f of ["server.js", "stores.js", "assets.js"]) await cp(`${host}runtime/${f}`, `${dir}runtime/${f}`);
+  for (const f of ["server.js", "stores.js", "assets.js", "shared.js"]) await cp(`${host}runtime/${f}`, `${dir}runtime/${f}`);
   await writeFile(`${dir}GhostTodo.wasm`, bytes);
   for (const [from, to] of layout.files) {
     await mkdir(new URL(`file://${dir}${to}/..`), { recursive: true });

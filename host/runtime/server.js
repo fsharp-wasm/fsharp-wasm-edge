@@ -18,6 +18,10 @@
 
 const BUILTINS = { builtins: ["js-string"] };
 const MAX_BODY = 1 << 20;
+// A request that lost its commit against another writer runs again over what the winner wrote.  Each attempt loses only to a writer that won, so the instances make progress together;
+// the wait is random so that they do not collide again in step.  Twelve attempts hold a burst of that many writers on one state; beyond that the answer is 503 and a retry.
+const ATTEMPTS = 12;
+const backoff = (attempt) => new Promise((resolve) => setTimeout(resolve, Math.random() * 4 * 2 ** Math.min(attempt, 6)));
 
 /** True when this engine compiles modules that import `wasm:js-string` (V8 13+: Node 24, Deno 2.1, Chrome 130). */
 export function supportsJsStringBuiltins() {
@@ -35,7 +39,8 @@ const usesBuiltins = (module) => WebAssembly.Module.imports(module).some((i) => 
 // a WebAssembly.Module made in another realm (a sandbox) is not `instanceof` this one: ask what it is
 const isModule = (x) => x instanceof WebAssembly.Module || Object.prototype.toString.call(x) === "[object WebAssembly.Module]";
 
-const toModule = (source) => {
+/** The module of `source` (a WebAssembly.Module or its bytes), compiled the way the engine needs: compile once, give the result to as many servers as there are states. */
+export const compileModule = (source) => {
   if (isModule(source)) return source;
   const plain = new WebAssembly.Module(source);
   return usesBuiltins(plain) ? new WebAssembly.Module(source, BUILTINS) : plain;
@@ -78,13 +83,13 @@ export function serveAsset(assets, request, basePath = "") {
  * @param {object}  options
  * @param {WebAssembly.Module | BufferSource} options.module  the compiled module (or its bytes)
  * @param {string}  options.hostName   what the module sees as `hostName()`: "node", "deno", "cloudflare-workers", …
- * @param {object}  options.store      a store of stores.js; default memory
+ * @param {object}  options.store      a store of stores.js; default memory.  A store whose `flush` says `false` lost against another writer: the request runs again
  * @param {string}  [options.basePath] the module is mounted below this path ("/fn"); the module and the assets see the rest
  * @param {boolean} [options.reload]   reload the state from the store before every request (a stateless platform whose instances share it)
  * @param {Record<string, {type: string, body: string}>} [options.assets]  files served before the module is asked (GET only)
  */
 export function createServer({ module, hostName, store, reload = false, assets = {}, basePath = "" }) {
-  const compiled = toModule(module);
+  const compiled = compileModule(module);
   let current = null;
   const log = (m) => console.log(`[${hostName}] ${m}`);
   const stringStore = store;
@@ -199,16 +204,31 @@ export function createServer({ module, hostName, store, reload = false, assets =
       idleQueued = false;
       try {
         await new Promise((resolve) => setTimeout(resolve, 0));
-        await stringStore.load(reload);
-        const exports = ensureInstance().exports;
-        if (reload) exports.reset?.();
-        exports.idle?.();
-        await stringStore.flush();
+        // a call that lost to another writer is dropped after its attempts: the module asks again with the next request that finds the work due
+        await transact((exports) => exports.idle?.());
       } catch (e) {
         log(`idle failed: ${e?.message ?? e}`);
       }
     });
   };
+
+  /**
+   * `task(exports)` over the loaded state, and the state it changed written; its result, or `null` when every attempt lost its write.  A lost attempt leaves the module
+   * with a state that is behind (it keeps its own copy of what it read): `reset` makes it read again, from the store, which has loaded what the winner wrote.
+   */
+  async function transact(task) {
+    for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+      await stringStore.load(reload);
+      const exports = ensureInstance().exports;
+      if (reload || attempt > 0) exports.reset?.();
+      const result = task(exports);
+      if ((await stringStore.flush()) !== false) return { result };
+      await backoff(attempt);
+    }
+    return null;
+  }
+
+  const refused = (status, text) => new Response(text, { status, headers: { "content-type": "text/plain; charset=utf-8", "retry-after": "1" } });
 
   async function handle(request, path) {
     const url = new URL(request.url);
@@ -216,22 +236,29 @@ export function createServer({ module, hostName, store, reload = false, assets =
     const text = hasBody ? await request.text() : "";
     if (text.length > MAX_BODY) return new Response("payload too large", { status: 413 });
 
-    await stringStore.load(reload);
-    const exports = ensureInstance().exports;
-    if (reload) exports.reset?.();
-
-    current = {
-      method: request.method, path, query: url.search.replace(/^\?/, ""),
-      headers: [...request.headers].flat().join("\n"), body: text,
-      status: 200, responseHeaders: [], payload: "", bytes: null, position: 0, idle: false,
+    const run = (exports) => {
+      current = {
+        method: request.method, path, query: url.search.replace(/^\?/, ""),
+        headers: [...request.headers].flat().join("\n"), body: text,
+        status: 200, responseHeaders: [], payload: "", bytes: null, position: 0, idle: false,
+      };
+      try {
+        exports.handle();
+        return current;
+      } finally {
+        current = null;
+      }
     };
+    let outcome;
     try {
-      exports.handle();
-    } finally {
-      var done = current;
-      current = null;
+      outcome = await transact(run);
+    } catch (e) {
+      if (!e?.unavailable) throw e;
+      log(e.message);
+      return refused(503, e.message);
     }
-    await stringStore.flush();
+    if (!outcome) return refused(503, "the state is being changed by other requests faster than this one could follow: try again");
+    const done = outcome.result;
     if (done.idle) scheduleIdle();
     const empty = done.status === 204 || done.status === 304 || request.method === "HEAD";
     const response = new Response(empty ? null : done.payload, { status: done.status });

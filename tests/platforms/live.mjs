@@ -8,9 +8,8 @@
 //   netlify            the Edge Function (every path but /fn)               netlify-edge
 //   netlify-functions  the Node.js function, mounted under /fn              netlify-functions
 //
-// A deployment that has a state of its own needs a fresh one: the scenario expects an empty list.  A Durable Object is addressed by a
-// room, and every run takes a new one; Vercel and Netlify keep the state in memory per instance, so run it against a deployment that was
-// just made (the deploy workflow does) — a second run against the same warm instance starts from the first run's todos and says so.
+// The scenario expects an empty list.  Every platform keeps its state by room (`?room=`: a Durable Object on Cloudflare, a namespace of the shared Redis on Vercel and Netlify), and
+// every run takes a new room, so a deployment does not have to be new.  A room other than the default expires from Redis a day after its last write.
 // Headers a platform needs (Vercel's protection bypass) come from $LIVE_HEADER_<PLATFORM>, "name: value", never from the command line.
 import { writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
@@ -19,12 +18,13 @@ import { report } from "./report.mjs";
 import { runScenario } from "./scenario.mjs";
 import { explainNotUp } from "./diagnose.mjs";
 
+const byRoom = (room) => (url) => url.searchParams.set("room", room);
 const platforms = {
-  cloudflare: { host: "cloudflare-workers", scope: (room) => (url) => url.searchParams.set("room", room) },
-  vercel: { host: "vercel-edge" },
-  "vercel-node": { host: "vercel-node" },
-  netlify: { host: "netlify-edge" },
-  "netlify-functions": { host: "netlify-functions" },
+  cloudflare: { host: "cloudflare-workers", scope: byRoom },
+  vercel: { host: "vercel-edge", scope: byRoom },
+  "vercel-node": { host: "vercel-node", scope: byRoom },
+  netlify: { host: "netlify-edge", scope: byRoom },
+  "netlify-functions": { host: "netlify-functions", scope: byRoom },
 };
 
 const args = process.argv.slice(2);
@@ -64,7 +64,7 @@ async function waitUntilUp(send, seconds = Number(process.env.LIVE_WAIT_SECONDS 
 async function requireFresh(send) {
   const r = await send("GET", "api/state");
   let version; try { version = JSON.parse(r.text).version; } catch { /* not JSON: the scenario reports it */ }
-  if (version > 0) throw new Error(`the deployment already has state (version ${version}): the scenario needs a fresh one — deploy again, or use the Durable Object (a new ?room)`);
+  if (version > 0) throw new Error(`the room already has state (version ${version}): the scenario needs an empty one`);
 }
 
 const room = `live-${randomBytes(4).toString("hex")}`;

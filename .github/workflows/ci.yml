@@ -29,10 +29,16 @@ jobs:
           deno-version: v2.x
       - uses: oven-sh/setup-bun@v2
       - run: npm ci
+      # Vercel and Netlify keep their state in Redis: the tests run on a real one
+      - run: sudo apt-get install -y --no-install-recommends redis-server
       - name: The module is the one its provenance names
         run: node tools/fixture.mjs check
       - name: Persistence (the host, the module, the journal of the file store)
         run: node tests/host/persistence.mjs
+      - name: Shared state (instances that race for one state, a storage that says no, no fallback to memory)
+        env:
+          REQUIRE_REDIS: '1'
+        run: node tests/host/shared-store.mjs
       - name: The diagnoses of a deployment that does not come up
         run: node tests/platforms/diagnose.mjs
       - name: Package the platforms
