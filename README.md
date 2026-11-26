@@ -1,5 +1,9 @@
 # fsharp-wasm-edge
 
+<!-- status -->
+[![CI](https://github.com/fsharp-wasm/fsharp-wasm-edge/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/fsharp-wasm/fsharp-wasm-edge/actions/workflows/ci.yml) [![Deploy](https://github.com/fsharp-wasm/fsharp-wasm-edge/actions/workflows/deploy.yml/badge.svg?branch=main)](https://github.com/fsharp-wasm/fsharp-wasm-edge/actions/workflows/deploy.yml) · [Status of every repository](https://fsharp-wasm.github.io/status/)
+<!-- /status -->
+
 <!-- platform -->
 > **Part of the [fsharp-wasm platform](https://fsharp-wasm.github.io/projects/)**: server and edge. Runs modules compiled from any F# program; the first are those of [backend](https://github.com/fsharp-wasm/fsharp-wasm-backend). Used by the deployments, once there are any.
 > [All projects](https://fsharp-wasm.github.io/projects/) · [Roadmap](https://fsharp-wasm.github.io/docs/roadmap/) · [Tests](https://fsharp-wasm.github.io/tests/) · [Benchmarks](https://fsharp-wasm.github.io/benchmarks/) · [Live demos](https://fsharp-wasm.github.io/demos/)
