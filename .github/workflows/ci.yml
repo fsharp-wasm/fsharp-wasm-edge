@@ -33,6 +33,8 @@ jobs:
         run: node tools/fixture.mjs check
       - name: Persistence (the host, the module, the journal of the file store)
         run: node tests/host/persistence.mjs
+      - name: The diagnoses of a deployment that does not come up
+        run: node tests/platforms/diagnose.mjs
       - name: Package the platforms
         run: node build/package.mjs
       - name: The same scenario on every platform

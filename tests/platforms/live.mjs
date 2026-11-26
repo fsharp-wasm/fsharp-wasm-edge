@@ -17,6 +17,7 @@ import { randomBytes } from "node:crypto";
 import { viaFetch } from "./http.mjs";
 import { report } from "./report.mjs";
 import { runScenario } from "./scenario.mjs";
+import { explainNotUp } from "./diagnose.mjs";
 
 const platforms = {
   cloudflare: { host: "cloudflare-workers", scope: (room) => (url) => url.searchParams.set("room", room) },
@@ -45,12 +46,18 @@ const headersOf = (name) => {
 async function waitUntilUp(send, seconds = Number(process.env.LIVE_WAIT_SECONDS ?? 90)) {
   const deadline = Date.now() + seconds * 1000;
   let last = "no answer";
+  let answer = null;
   while (Date.now() < deadline) {
-    try { const r = await send("GET", "healthz"); if (r.status === 200 && r.text === "ok") return; last = `${r.status} ${r.type} ${r.text.slice(0, 120)}`; }
-    catch (e) { last = String(e.cause?.message ?? e.message); }
+    try {
+      const r = await send("GET", "healthz");
+      if (r.status === 200 && r.text === "ok") return;
+      answer = r;
+      last = `${r.status} ${r.type} ${r.text.slice(0, 120)}`;
+    } catch (e) { answer = null; last = String(e.cause?.message ?? e.message); }
     await sleep(2000);
   }
-  throw new Error(`/healthz did not answer ok within ${seconds}s (last: ${last})`);
+  const hint = answer ? explainNotUp(answer.status, answer.type, answer.text) : "";
+  throw new Error(`/healthz did not answer ok within ${seconds}s (last: ${last})${hint ? `\n    ${hint}` : ""}`);
 }
 
 /** The scenario expects an empty list: say so, instead of failing somewhere in the middle of it. */

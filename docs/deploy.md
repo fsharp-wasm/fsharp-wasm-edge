@@ -96,7 +96,7 @@ node tests/platforms/live.mjs cloudflare=https://ghost-todo.<subdomain>.workers.
 | symptom | meaning |
 |---|---|
 | `the secret … is not set` | the step stops before it calls the platform; add the secret (environment or repository) |
-| `/healthz did not answer ok` with `401` | Vercel Deployment Protection (above) |
+| `/healthz did not answer ok` with `401`, or with `200 text/html` and a `<!DOCTYPE html>` | Vercel Deployment Protection (above): `vercel deploy` prints the deployment's own URL, which is protected, and a fetch follows the redirect to Vercel's login page, which answers `200`; the run says so now |
 | `/healthz did not answer ok` with a `CompileError` or a 5xx | the platform refused the module: the engine or runtime version is too old for WebAssembly GC, or the string ABI is wrong — the platforms' own message is in the run's log |
 | only the state checks fail on Vercel or Netlify (`info`, `healthz`, the page pass) | the requests reached different instances: the state is in memory per instance. A property of the platform, not a bug; a durable state needs a store over Vercel KV / Netlify Blobs (`server/runtime/stores.js`; not written) |
 | `the deployment already has state` | the scenario was run before against this instance; deploy again (the workflow always does) |
