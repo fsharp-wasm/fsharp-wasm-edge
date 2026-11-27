@@ -1,23 +1,35 @@
 # Continuous deployment to Cloudflare, Vercel and Netlify
 
 `.github/workflows/deploy.yml` takes the `platforms` artifact of a CI run (what CI built *and* tested — no rebuild), deploys it to the three
-platforms, and then runs the platform scenario (`tests/platforms`, 26 checks) against the **live URLs**; the answers of the deployments must
+platforms, and then runs the platform scenario (`tests/platforms`, 29 checks) against the **live URLs**; the answers of the deployments must
 be identical to each other. The result is the run's summary and the `live` artifact (`live.json`).
 
 ## Status — read this first
 
-**Nothing has been deployed yet.** There is no account behind this repository, so no URL exists. What is checked, and how (everything but the last row runs in this repository's CI on every push):
+**The first deploy ran on 2026-11-27** (the `Deploy` run 46061722882 on `main`). What answers, as measured by the live runner and by a request to each address on the same day:
+
+| platform | address | what answers |
+|---|---|---|
+| Cloudflare Workers + Durable Object | `https://ghost-todo.sascha-dewald.workers.dev` | **all 29 checks pass** against the live address; the platform accepts the WebAssembly GC module (`WASMGC_STRING_ABI=exports`) |
+| Vercel | `https://fsharp-wasm-edge.vercel.app` | the page answers `200`; `/healthz` answers `503` "no shared store is configured" |
+| Netlify | `https://fsharp-wasm-edge.netlify.app` | the same as Vercel |
+
+On Vercel and Netlify the `503` is the host's own answer before the module runs, because no Redis is set (see the two sections below). So what is **not shown yet** is that
+production Vercel (Edge and Node) and Netlify (Edge and Functions) run the module: the live runner has to pass there too, and that needs the Redis variables first.
+Until then those four rows of the matrix stay "not exercised on the platform".
+
+What is checked besides, and how (everything but the live rows runs in this repository's CI on every push):
 
 | what | how | result |
 |---|---|---|
-| the Cloudflare package | `wrangler@4.162.0 deploy --dry-run` (bundles the Worker, the `.wasm` as a module, the Durable Object binding; no upload) | bundles |
-| the Netlify package | `netlify-cli@27.19.0 build --offline` | the function zip holds `GhostTodo.wasm`; the edge function is routed to `/*` except `/fn` |
-| the Vercel package | `vercel@65.16.0 build` needs a valid token even for a local build | **not checked** by the CLI; only the in-process Node handler and the Edge Runtime sandbox of the matrix |
+| the Cloudflare package | `wrangler@4.162.0 deploy --dry-run` (bundles the Worker, the `.wasm` as a module, the Durable Object binding; no upload) | bundles; deployed and live (above) |
+| the Netlify package | `netlify-cli@27.19.0 build --offline` | the function zip holds `GhostTodo.wasm`; the edge function is routed to `/*` except `/fn`; deployed (above) |
+| the Vercel package | `vercel@65.16.0 build` needs a valid token even for a local build | **not checked** by the CLI in CI; deployed by the workflow (above), the in-process Node handler and the Edge Runtime sandbox of the matrix cover the rest |
 | the workflow | `actionlint` | clean |
-| the live runner | `tests/platforms/live.mjs` against local servers over real HTTP (Miniflare listening on a port, the Deno edge harness, the Node handler behind `node:http`); also the failure cases: wrong host name, a warm instance, an unreachable URL | passes / fails as it should |
-| the platforms' runtimes | — | **unknown until the first deploy**: that production Cloudflare, Vercel Edge and Netlify accept a WasmGC module is what the first live run decides |
+| the live runner | `tests/platforms/live.mjs` against local servers over real HTTP (Miniflare listening on a port, the Deno edge harness, the Node handler behind `node:http`); also the failure cases: wrong host name, a warm instance, an un-configured store | passes; against the real addresses: Cloudflare 29 of 29, Vercel and Netlify wait for the store |
 
-So the first run is the proof, not a formality. If a platform refuses the module, the `live` job says which check failed.
+**What it needs next** (the maintainer sets these in the project settings of the two platforms, not in the chat): an Upstash Redis, and its two variables in both projects, either
+`UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` or the `KV_REST_API_URL` and `KV_REST_API_TOKEN` of Vercel's Upstash integration. Then *Run workflow* on `Deploy` runs the live check again.
 
 ## What the pipeline needs
 

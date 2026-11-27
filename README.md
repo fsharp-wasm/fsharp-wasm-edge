@@ -11,9 +11,10 @@
 The host that runs **F# programs compiled to WebAssembly GC** on the platforms people deploy to: **Cloudflare Workers (with Durable Objects), Vercel,
 Netlify, Deno, Bun and Node** — one module, a small adapter per platform, the same answers everywhere.
 
-> **Status: nothing is deployed yet.** The host, the adapters and the tests work and run in CI; the deploy workflow is written and checked as far as it can
-> be without an account ([docs/deploy.md](docs/deploy.md) says what it needs and what each row of "verified" means). The first real deployments are
-> next on the [roadmap](docs/roadmap.md).
+> **Status (2026-11-27): one platform live, two deployed.** Ghost Todo runs on Cloudflare Workers with a Durable Object and passes all 29 checks against the live address
+> (`https://ghost-todo.sascha-dewald.workers.dev`). On Vercel (`https://fsharp-wasm-edge.vercel.app`) and Netlify (`https://fsharp-wasm-edge.netlify.app`) the page answers and the API answers
+> `503` until a shared store (an Upstash Redis) is configured; whether those platforms run the module is decided when the live check passes there
+> ([docs/deploy.md](docs/deploy.md) has the measurements and what is needed).
 
 ```text
 F# module  ──fsharp-wasm──▶  GhostTodo.wasm   (47 KB, WebAssembly GC, string ABI: exports)
@@ -39,11 +40,11 @@ identical answers in 20 steps (unicode text, the patches decoded and applied to 
 | Node 24 | the packaged adapter, as a process | the platform's own runtime | a JSON file, survives a restart |
 | Bun 1.4 | the packaged adapter, as a process | the platform's own runtime | a JSON file, survives a restart |
 | Deno 2.9 / Deno Deploy | the packaged adapter, as a process | the platform's own runtime | Deno KV, survives a restart |
-| Cloudflare Workers | the Worker and the Durable Object on **workerd** (through Miniflare) | the platform's runtime and its Durable Object storage; **not deployed** | Durable Object storage, survives a restart |
-| Vercel Edge Functions | the edge adapter, bundled with `?module` as a ready `WebAssembly.Module`, in the Edge Runtime sandbox (`@edge-runtime/vm`) | an emulation; Vercel's bundler and platform are not exercised; **not deployed** | Redis (Upstash), shared by the instances, survives a restart |
-| Vercel Functions (Node) | the Node adapter's handlers (mounted at `/api/node`), called in a Node 24 process | the handler contract; **not deployed** | Redis (Upstash), shared by the instances, survives a restart |
-| Netlify Edge Functions | the edge adapter under Deno, given a `Request` | Netlify's edge runtime is Deno; Netlify's bundler is not exercised by the matrix; **not deployed** | Redis (Upstash), shared by the instances, survives a restart |
-| Netlify Functions | the function's handler, called in a Node 24 process | the handler contract; **not deployed** | Redis (Upstash), shared by the instances, survives a restart |
+| Cloudflare Workers | the Worker and the Durable Object on **workerd** (through Miniflare) | the platform's runtime and its Durable Object storage; **deployed, 29 of 29 checks live (2026-11-27)** | Durable Object storage, survives a restart |
+| Vercel Edge Functions | the edge adapter, bundled with `?module` as a ready `WebAssembly.Module`, in the Edge Runtime sandbox (`@edge-runtime/vm`) | an emulation; Vercel's bundler and platform are not exercised by the matrix; **deployed, waits for its store** | Redis (Upstash), shared by the instances, survives a restart |
+| Vercel Functions (Node) | the Node adapter's handlers (mounted at `/api/node`), called in a Node 24 process | the handler contract; **deployed, waits for its store** | Redis (Upstash), shared by the instances, survives a restart |
+| Netlify Edge Functions | the edge adapter under Deno, given a `Request` | Netlify's edge runtime is Deno; Netlify's bundler is not exercised by the matrix; **deployed, waits for its store** | Redis (Upstash), shared by the instances, survives a restart |
+| Netlify Functions | the function's handler, called in a Node 24 process | the handler contract; **deployed, waits for its store** | Redis (Upstash), shared by the instances, survives a restart |
 
 Beyond the matrix, CI runs what the platforms' own tools say about the packages, without an account: `wrangler deploy --dry-run` for Cloudflare and
 `netlify build --offline` for Netlify (Vercel's CLI wants a token even for a local build, so that row is not checked).
